@@ -1,104 +1,12 @@
 /*
  * tasks.c
  *
+ * FreeRTOS tasks running in parallel
+ * Here is most of the functionality of the pinball controller
+ *
  *  Created on: Dec 22, 2015
  *      Author: michael
  */
-
-//-----------------------------
-//# Digital inputs / outputs
-//-----------------------------
-//At init, scan each i2c bus from 0x40 - 0x47 --> these are PCF8574s
-//Keep a list of PC8574 addresses
-//To use an PC8574 as input we have to write a 0xFF to it (to prevent the open drain output pulling it low)
-//Otherwise outputs and inputs can be processed the same
-//
-// Switch states are stored as uint8_t array
-// Byte Index AA = 0x00 - 0xFF
-//  0 -  7: switch matrix
-//  8 - 15: I2C GPIO expanders on I2C0
-// 16 - 23: I2C GPIO expanders on I2C1
-// 24 - 31: I2C GPIO expanders on I2C2
-// 32 - 39: I2C GPIO expanders on I2C3
-// 40 - 255:Reserved
-//
-//
-// Calculating HW-adress from byte index: HW = AA*8 + B  --> HW = 12 bit = 0 ... 1023
-// AA = byte index, B = pin index (0-7)
-//
-// Calculating byte index from HW-adress:
-// AA = HW/8        B = HW%8
-//
-//
-// AA-=8; AA<0:None(SM);
-// Calculating I2Cch from AA:
-// int(AA/8); AA>3:None(Res);
-//
-// Calculating I2Cadr from AA:
-// (AA)%8 + 0x40
-//
-// Switch input HW - addresses:
-//---------------------------------
-// 0 - 63  = Switch matrix
-// 64 - 71 = I2C[0][0] --> Solenoid driver on mainboard
-// 72 - 79 = I2C[0][1] --> First external PCL GPIO extender on I2C channel 0
-// 312-319 = I2C[3][7] --> 7th   external PCL GPIO extender on I2C channel 3
-
-//
-// Hardcoded solenoid drivers: 0x0800 - 0x0807
-//
-// Reading an output switch will readback its logical value. So all I2C extenders can be read in bulk
-// I2C is fast eough to read all of them with 625 Hz repetition rate (the ones not connected will report 0xFF)
-//
-// There is the debounce routine running with 333 Hz, reading all switches (matrix and I2C) into an array
-// * switch matrix, read the rows / columns
-// * I2C reader, queries all port extenders   (runs in ISR background)
-// Deboouncing: use a vertical counter algo.
-//
-// The quickrule task listens to switch cange events.
-// It checks a local list of rules, which can lead to immediate actions, like coils firing and such.
-//
-// The serial reporter task listens to switch change events. Encodes them and reports them on the serial port
-//
-// There must be a command to report the current switch state (just send the complete uint8_t array)
-//
-// Command to pulse a coil with: tPulse, pulsePWM, holdPWM --> keep holdPWM state (which can be 0) forever
-//
-//-----------------------------
-//# WS2811 RGB LED strings
-//-----------------------------
-// Raw data values are attached to serial command and just sent on one of the channels
-// Queue to SPI send thread
-// --> Update LEDs
-//-----------------------------
-//# I2C
-//-----------------------------
-// THere must be commands to do send / receive of custom bytes to custom addresses
-// Queue to I2C custom sent thread. Mutex of I2C hardware!
-//-----------------------------
-//# Coonfigure commands
-//-----------------------------
-// Pulse a driver:
-//    * pulse time  [ms]
-//    * pulse power [pwm units]
-//    * hold power  [pwm units]
-//
-// Configure switch:
-//    * debouncing ticks (10-80 ms)?
-//
-// Configure QuickRule:
-//  * quickRuleId (0-64)
-//     * input switch ID
-//  * trigger type flags ([0] enable/disable, [1] trigger on positive/negative edge, [2] disable ouput on release, [3] invert output, [4] apply now)
-//    * post trigger hold-off time [ms]
-//  * driver output ID
-//  * pulse duration 0 - 100 [ms]
-//    * pulse pwm [only for output ID 0-3 which are the pwm channels]
-//    * hold pwm  [only for output ID 0-3 which are the pwm channels]
-//
-// Writing a 0 to an input switch will disable the readback and should be avoided
-// Only write to the I2C addresses which have been specified as outputs!
-//
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -121,6 +29,7 @@
 #include "utils/ustdlib.h"
 #include "utils/uartstdio.h"
 #include "utils/cmdline.h"
+
 // USB stuff
 #include "usblib/usblib.h"
 #include "usblib/usbcdc.h"
@@ -129,6 +38,24 @@
 #include "usb_serial_structs.h"
 #include "myTasks.h"
 #include "i2cHandlerTask.h"
+
+// Global vars
+t_PCLOutputByte g_outWriterList[OUT_WRITER_LIST_LEN];   // A list to keep track of the state of all output pins
+
+//-----------------------
+// Command parser
+//-----------------------
+// This is the table that holds the command names, implementing functions, and brief description.
+tCmdLineEntry g_psCmdTable[] = {
+        { "?",     Cmd_help, ": Display list of commands" },
+        { "*IDN?", Cmd_IDN,  ": Display ID and version info" },
+        { "SW?",   Cmd_SW,   ": Return the state of ALL switches (40 bytes)" },
+        { "OUT",   Cmd_OUT,  ": OUT hwIndex tPulse PWMhigh PWMlow\nOUT   : OUT hwIndex PWMvalue" },
+        { "RUL",   Cmd_RUL,  ": RUL ID IDin IDout trHoldOff tPulse pwmOn pwmOff\n        bPosEdge bAutoOff bLevelTr" },
+        { "RULE",  Cmd_RULE, ": Enable  a previously disabled rule: RULE ID" },
+        { "RULD",  Cmd_RULD, ": Disable a previously defined rule:  RULD ID" },
+        { "LED",   Cmd_LED,  ": LED <CH>,<led0>,<led1> ..." },
+        { 0, 0, 0 } };
 
 uint16_t strMyStrip(uint8_t *cmdString, uint16_t cmdLen) {
     //Remove \n, \r and make sure there is a \0 at the end
@@ -205,9 +132,9 @@ void taskUsbCommandParser(void *pvParameters) {
     }
 }
 
-t_PCLOutputByte g_outWriterList[OUT_WRITER_LIST_LEN];
-
 void setBcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue) {
+    // Pre calculate and SET the values which need to be output on a pin to get
+    // Binary Code Modulation (BCM) with a certain power level.
     uint8_t j;
     taskENTER_CRITICAL();
     for (j = 0; j < N_BIT_PWM; j++) {
@@ -218,12 +145,13 @@ void setBcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue) {
 }
 
 void handleBitRules(t_PCLOutputByte *outListPtr, uint8_t dt) {
+    // Handle the switchover from `Pulsed` state to `unpulsed` state for each output pin
     uint8_t i;
     t_BitModifyRules *bitRules = outListPtr->bitRules;
     for (i = 0; i <= 7; i++) {
-        if (bitRules->tPulse > 0) {                        //Is the entry valid?
-            bitRules->tPulse -= dt;                            //Apply dt timestep
-            if (bitRules->tPulse <= 0) {             //Did the countdown expire?
+        if (bitRules->tPulse > 0) {                                    //Is the entry valid?
+            bitRules->tPulse -= dt;                                    //Apply dt timestep
+            if (bitRules->tPulse <= 0) {                               //Did the countdown expire?
                 setBcm(outListPtr->bcmBuffer, i, bitRules->lowPWM);    //Then apply the pulse_low bcm pattern
             }
         }
@@ -252,11 +180,11 @@ void taskPCLOutWriter(void *pvParameters) {
     }
     xLastWakeTime = xTaskGetTickCount();
     while (1) {
-        //---------------------------------
+        //------------------------------------------------------------------
         // This loop does binary code modulation
-        // It is executed with increasing delay
-        //        at t=1, t=2, t=4, ...
-        //---------------------------------
+        // It executes periodically with increasing delay (d) like this:
+        // d=1, d=2, d=4, d=8, d=1, ...
+        //------------------------------------------------------------------
         outListPtr = g_outWriterList;
         for (i = 0; i < OUT_WRITER_LIST_LEN; i++) {
             if (outListPtr->i2cChannel < 0) {
@@ -272,7 +200,7 @@ void taskPCLOutWriter(void *pvParameters) {
             outListPtr++;
         }
         //---------------------------------
-        // Measure ticks
+        // Measure ticks for profiling
         //---------------------------------
         ticks = stopTimer();
         c++;
@@ -294,8 +222,8 @@ void taskPCLOutWriter(void *pvParameters) {
     }
 }
 
-void setPclOutput(t_outputBit outLocation, int16_t tPulse, uint8_t highPower,
-        uint8_t lowPower) {
+void setPclOutput(t_outputBit outLocation, int16_t tPulse, uint8_t highPower, uint8_t lowPower) {
+// Set the power level and pulse settings of an output pin
 //    tPulse    = duration of the pulse [ms]
 //    highPower = PWM value during the pulse
 //    lowPower  = PWM value after  the pulse
@@ -346,7 +274,8 @@ void ts_usbSend(uint8_t *data, uint16_t len) {
 }
 
 t_outputBit decodeHwIndex(uint16_t hwIndex) {
-//Meaning of byteIndex:  HW_INDEX_SWM: column,  HW_INDEX_I2Cn: right shited I2C address
+// Decode a hwIndex and fill the t_outputBit structure with details
+// Meaning of byteIndex:  HW_INDEX_SWM: column,  HW_INDEX_I2Cn: right shited I2C address
     int16_t i2cCh;
     t_outputBit tempResult;
     tempResult.byteIndex = hwIndex / 8;
@@ -366,22 +295,6 @@ t_outputBit decodeHwIndex(uint16_t hwIndex) {
     tempResult.hwIndexType = HW_INDEX_INVALID;
     return tempResult;
 }
-
-// This is the table that holds the command names, implementing functions, and brief description.
-tCmdLineEntry g_psCmdTable[] =
-        { { "?", Cmd_help, ": Display list of commands" }, { "*IDN?", Cmd_IDN,
-                ": Display ID and version info" }, { "SW?", Cmd_SW,
-                ": Return the state of ALL switches (40 bytes)" },
-                { "OUT", Cmd_OUT,
-                        ": OUT hwIndex tPulse PWMhigh PWMlow\nOUT   : OUT hwIndex PWMvalue" },
-                { "RUL", Cmd_RUL,
-                        ": RUL ID IDin IDout trHoldOff tPulse pwmOn pwmOff\n        bPosEdge bAutoOff bLevelTr" },
-                { "RULE", Cmd_RULE,
-                        ": Enable  a previously disabled rule: RULE ID" }, {
-                        "RULD", Cmd_RULD,
-                        ": Disable a previously defined rule:  RULD ID" }, {
-                        "LED", Cmd_LED, ": LED <CH>,<led0>,<led1> ..." }, { 0,
-                        0, 0 } };
 
 // This function implements the "help" command.  It prints a simple list of the available commands with a brief description.
 int Cmd_help(int argc, char *argv[]) {
@@ -411,7 +324,7 @@ int Cmd_SW(int argc, char *argv[]) {
     ustrncpy(outBuffer, "SW:", REPORT_SWITCH_BUF_SIZE); //SW = Hex coded switch state
     for (i = 0; i < N_LONGS; i++) {
         charsWritten += usnprintf(&outBuffer[charsWritten],
-                REPORT_SWITCH_BUF_SIZE - charsWritten, "0x%08x,",
+                REPORT_SWITCH_BUF_SIZE - charsWritten, "%08x ",
                 g_SwitchStateDebounced.longValues[i]);
         if (charsWritten >= REPORT_SWITCH_BUF_SIZE - 10) {
             UARTprintf("Cmd_SW(): string buffer overflow!\n");
@@ -498,7 +411,7 @@ int Cmd_RULD(int argc, char *argv[]) {
 }
 
 int Cmd_RUL(int argc, char *argv[]) {
-// Configure and activate QuickRule:
+// Configure and activate a Quick-fire rule:
 //  * quickRuleId (0-64)
 //  * input switch ID number
 //  * driver output ID number

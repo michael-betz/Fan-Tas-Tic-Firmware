@@ -30,16 +30,16 @@ typedef struct {
     uint8_t i2cAddress;
 } t_outputBit;
 
-typedef struct {				// State of a pulsed solenoid driver output pin
-    int16_t tPulse; // Countdown counter, How long does the `high` pulse last [ms], -1 = invalid rule
-    uint8_t lowPWM; // PWM value after tPulse	   (max. resolution is defined by N_BIT_PWM)
+typedef struct {				    // State of a pulsed solenoid driver output pin
+    int16_t tPulse;                 // Countdown counter, How long does the `high` pulse last [ms], -1 = invalid rule
+    uint8_t lowPWM;                 // PWM value after tPulse	   (max. resolution is defined by N_BIT_PWM)
 } t_BitModifyRules;
 
-typedef struct {
+typedef struct {                    // State of all outputs on a PCF8574 IO extender
     int8_t i2cChannel;
     uint8_t i2cAddress;
-    uint8_t bcmBuffer[N_BIT_PWM];
-    t_BitModifyRules bitRules[8];
+    uint8_t bcmBuffer[N_BIT_PWM];   // To do binary code modulation, these 4 bytes will be written in sequence to the PCF
+    t_BitModifyRules bitRules[8];   // Hold the state of each output pin
 } t_PCLOutputByte;
 
 //*****************************************************************************

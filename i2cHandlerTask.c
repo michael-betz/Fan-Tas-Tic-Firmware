@@ -31,17 +31,17 @@
 #include "myTasks.h"
 #include "i2cHandlerTask.h"
 
+//-------------------------
+// Global vars.
+//-------------------------
 tI2CMInstance g_sI2CInst[4];                         //Four I2C driver instances for 4 channels
 static TaskHandle_t xTaskToNotifyI2CscanDone = NULL; //Task to notify once i2c scan is done
-
 uint8_t g_i2cReadStates[4][MAX_PCLS_PER_CHANNEL];    //Error codes of last I2C scan
-
 t_switchStateConverter g_SwitchStateSampled;         //Read values of last I2C scan
 t_switchStateConverter g_SwitchStateDebounced;       //Debounced values (the same after 4 reads)
 t_switchStateConverter g_SwitchStateToggled;         //Bits which changed
-t_quickRule g_QuickRuleList[MAX_QUICK_RULES];         //List of Quickrules
-
-volatile uint8_t g_readCounter = 0;                     // I2C read finished when g_readCounter == 4*MAX_PCLS_PER_CHANNEL
+t_quickRule g_QuickRuleList[MAX_QUICK_RULES];        //List of Quickrules
+volatile uint8_t g_readCounter = 0;                  // I2C read finished when g_readCounter == 4*MAX_PCLS_PER_CHANNEL
 
 void i2CIntHandler0(void) {
     I2CMIntHandler(&g_sI2CInst[0]);
@@ -124,7 +124,7 @@ void initMyI2C() {
     GPIOPadConfigSet( GPIO_PORTK_BASE, GPIO_PIN_5, GPIO_STRENGTH_8MA,
     GPIO_PIN_TYPE_STD_WPU);
 
-    // Enable loopbakc mode (otherwise it hangs :( )
+// Enable loopbakc mode (without pullups and without loopback the driver will hang! :( )
 //    I2C0_MCR_R |= 0x01;
 
     // Initialize I2C0 peripheral driver.
@@ -155,22 +155,19 @@ void ts_i2cTransfer(uint8_t channel, uint_fast8_t ui8Addr,
 
 uint8_t getSMrow() {
     uint8_t temp;
-    temp = GPIOPinRead( GPIO_PORTE_BASE, GPIO_PIN_3 | GPIO_PIN_2 | GPIO_PIN_1)
-            >> 1;    //         ,2,1,0
-    temp |= GPIOPinRead( GPIO_PORTC_BASE, GPIO_PIN_7 | GPIO_PIN_6) >> 3;//     ,4,3
-    temp |= GPIOPinRead( GPIO_PORTD_BASE, GPIO_PIN_7 | GPIO_PIN_6) >> 1;// ,6,5
-    temp |= GPIOPinRead( GPIO_PORTF_BASE, GPIO_PIN_4) << 3;    //7
+    // Read the state of the row of the switch matrix.
+    // The inputs are distributed across 4 Ports :p
+    //         ,2,1,0   PORTE
+    //     ,4,3         PORTC
+    // ,6,5             PORTD
+    //7                 PORTF
+    temp  = GPIOPinRead( GPIO_PORTE_BASE, GPIO_PIN_3 | GPIO_PIN_2 | GPIO_PIN_1) >> 1;
+    temp |= GPIOPinRead( GPIO_PORTC_BASE, GPIO_PIN_7 | GPIO_PIN_6) >> 3;
+    temp |= GPIOPinRead( GPIO_PORTD_BASE, GPIO_PIN_7 | GPIO_PIN_6) >> 1;
+//    temp |= GPIOPinRead( GPIO_PORTF_BASE, GPIO_PIN_4) << 3;    //TODO: Renable this on the final hardware !
     return temp;
 }
 
-#define SM_COL_DAT GPIO_PIN_0
-#define SM_COL_CLK GPIO_PIN_1
-//resetSMcol() + 8 * advanceSMcol() should take ~ 500 us
-// We should spent 60000 instructions
-// We got 320 + 160 + 60 = 530 useful instr.
-// We got 6 + 16 + 32 = 54 delay calls which do n*3 instructions
-// (60000 - 530)/54/3 = 367
-#define SM_COL_DELAY_CNT 200
 void resetSMrow() {
     uint8_t i;
 //    Reset Shift register to 0x00
@@ -285,7 +282,7 @@ void reportSwitchStates() {
                     switchValue = (g_SwitchStateDebounced.longValues[i] >> j)
                             & 0x00000001;
                     charsWritten += usnprintf(&outBuffer[charsWritten],
-                    REPORT_SWITCH_BUF_SIZE - charsWritten, "%03x=%01d;",
+                    REPORT_SWITCH_BUF_SIZE - charsWritten, "%03x=%01d ",
                             i * 32 + j, switchValue);
                     if (charsWritten >= REPORT_SWITCH_BUF_SIZE - 10) {
                         UARTprintf(
@@ -413,28 +410,26 @@ void taskDebouncer(void *pvParameters) {
 //    We will get the state of all switches every 3 ms
 //    Then we need to debounce each switch and send `state changed` events
 //    uint32_t ticks;
+    TickType_t xLastWakeTime;
     uint8_t i;
     UARTprintf("%22s: %s", "taskDebouncer()", "Started!\n");
     for (i = 0; i < MAX_QUICK_RULES; i++) {
         disableQuickRule(i);
     }
-    setupQuickRule(0, decodeHwIndex(0xFF), decodeHwIndex(0x100), 0, 0, 15, 15,
-    true, true, false);
     vTaskDelay(1000);
     i2cStartPCFL8574refresh();
+    xLastWakeTime = xTaskGetTickCount();
     while (1) {
         if (ulTaskNotifyTake( pdTRUE, portMAX_DELAY)) {    // Wait for i2c scanner ISR to finish
             // Run debounce algo (14 us)
-            debounceAlgo(g_SwitchStateSampled.longValues,
-                    g_SwitchStateDebounced.longValues,
-                    g_SwitchStateToggled.longValues);
+            debounceAlgo( g_SwitchStateSampled.longValues, g_SwitchStateDebounced.longValues, g_SwitchStateToggled.longValues);
             // Notify Mission pinball over serial port of all changed switches
             reportSwitchStates();
             processQuickRules();
 //            ticks = stopTimer();
 //            UARTprintf("readSwitchMatrix() %d ticks\n", ticks );
             //Run every 3 ms (333 Hz) --> 12 ms debounce latency
-            vTaskDelay(1000);
+            vTaskDelayUntil(&xLastWakeTime, 3);
 //            startTimer();
             //Start background I2C scanner (takes ~ 600 us)
             i2cStartPCFL8574refresh();

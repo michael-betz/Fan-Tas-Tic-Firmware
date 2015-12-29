@@ -14,15 +14,28 @@
 #define N_CHARS sizeof(t_switchState)/sizeof(uint8_t)
 #define MAX_QUICK_RULES 64
 
-//ToDO: FREERTOS will crash when REPORT_SWITCH_BUF_SIZE > 400, why? --> as during the context switch it copied the whole thing on the stack :p
+//ToDO: FREERTOS will crash when REPORT_SWITCH_BUF_SIZE > 400, why?
+// --> as during the context switch it copies the whole thing on the stack :p
+// Now we use static to make all large buffers invisible to the context switcher
 #define REPORT_SWITCH_BUF_SIZE 256		//Char buffer size for reporting events
 
+// Flags for quick-fire rules
 //[0] enable/disable, [1] trigger on positive/negative edge, [2] disable ouput on release, [3] invert output, [4] apply now)
 #define QRF_TRIG_EDGE_POS 0
 #define QRF_OFF_ON_RELASE 1
 #define QRF_LEVEL_TRIG    2
 #define QRF_ENABLED		  3
 #define QRF_STATE_TRIG    4
+
+// Port pins to the Switch Matrix column driver (shift register IC)
+#define SM_COL_DAT GPIO_PIN_0
+#define SM_COL_CLK GPIO_PIN_1
+//resetSMcol() + 8 * advanceSMcol() should take ~ 500 us
+// We should spent 60000 instructions
+// We got 320 + 160 + 60 = 530 useful instr.
+// We got 6 + 16 + 32 = 54 delay calls which do n*3 instructions
+// (60000 - 530)/54/3 = 367
+#define SM_COL_DELAY_CNT 200
 
 typedef struct {
     uint8_t matrixData[8];

@@ -1,11 +1,10 @@
-/* FreeRTOS 8.2 Tiva Demo
+/* Fan-Tas-Tic Pinball controller
+ * M.Betz,   01/2016
  *
  * main.c
  *
- * Andy Kobyljanec
- *
- * This is a simple demonstration project of FreeRTOS 8.2 on the Tiva Launchpad
- * EK-TM4C1294XL.  TivaWare driverlib sourcecode is included.
+ * Based on a demonstration project of FreeRTOS 8.2 on the Tiva Launchpad by Andy Kobyljanec
+ * TivaWare driverlib sourcecode is included.
  */
 
 #include <stdint.h>
@@ -46,16 +45,19 @@
 
 TaskHandle_t hUSBCommandParser = NULL;
 
+//-------------------------------------------------------------------------
+// Helper functions to Setup a hardware counter for simple cycle counting
+// To see how fast crtical parts of the code can run
+//-------------------------------------------------------------------------
 void configureTimer() {
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1); 	 // Enable Timer 1 Clock
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1); 	    // Enable Timer 1 Clock
     ROM_TimerConfigure(TIMER1_BASE, TIMER_CFG_ONE_SHOT_UP); // Configure Timer Operation as one shot up counting
 }
-
 void startTimer() {
     ROM_TimerEnable(TIMER1_BASE, TIMER_A); // Start Timer 1A
 }
-
 uint32_t stopTimer() {
+//  Returns the number of cycles since startTimer()
     uint32_t timerValue;
     ROM_TimerDisable(TIMER1_BASE, TIMER_A); // Stop Timer 1A
     timerValue = ROM_TimerValueGet(TIMER1_BASE, TIMER_A);
@@ -64,7 +66,9 @@ uint32_t stopTimer() {
     return (timerValue);
 }
 
+//-------------------------------------------------------------------------
 // Main function
+//-------------------------------------------------------------------------
 int main(void) {
     // Initialize system clock to 120 MHz
     uint32_t output_clock_rate_hz;
@@ -77,15 +81,15 @@ int main(void) {
     // Initialize the GPIO pins for the Launchpad
     PinoutSet(false, true);
 
-    // Set up the UART which is connected to the virtual COM port
+    // Set up the UART which is connected to the virtual debugging COM port
     UARTStdioConfig(0, 115200, SYSTEM_CLOCK);
     UARTprintf("\n\n\n\n"
             "**************************************************\n"
             " Hi, here's the brain of Fan-Tas-Tic Pinball V0.0 \n"
             "**************************************************\n\n");
 
-    configureTimer();
-    initMyI2C();
+    configureTimer();   //Init HW timer for measuring processor cycles (%timeit)
+    initMyI2C();        //Init the 4 I2C hardware channels
 
     // Enable lazy stacking for interrupt handlers.  This allows floating-point
     // instructions to be used within interrupt handlers, but at the expense of
@@ -95,6 +99,9 @@ int main(void) {
     // Configure the required pins for USB operation.
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_USB0);
 
+    //-------------------------------------------------------------------------
+    // Init USB serial port for communication to the host PC runing MPF
+    //-------------------------------------------------------------------------
     // Initialize the transmit and receive buffers.
     USBBufferInit(&g_sTxBuffer);
     USBBufferInit(&g_sRxBuffer);
@@ -106,26 +113,22 @@ int main(void) {
     // on the bus.
     USBDCDCInit(0, &g_sCDCDevice);
 
-    //*****************************************************************************
+    //-------------------------------------------------------------------------
     // Startup the FreeRTOS scheduler
-    //*****************************************************************************
+    //-------------------------------------------------------------------------
     // Create demo tasks
-    xTaskCreate(taskDemoLED, (const portCHAR *)"LEDr", configMINIMAL_STACK_SIZE,
-            NULL, 1, NULL);
+    xTaskCreate(taskDemoLED, (const portCHAR *)"LEDr", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
     // Create USB command parser task
-    xTaskCreate(taskUsbCommandParser, (const portCHAR *)"Parser", 256, NULL, 1,
-            &hUSBCommandParser);
+    xTaskCreate(taskUsbCommandParser, (const portCHAR *)"Parser", 256, NULL, 1, &hUSBCommandParser);
 
     // Create I2C / Matrix debouncer
-    xTaskCreate(taskDebouncer, (const portCHAR *)"Debouncer", 256, NULL, 1,
-            NULL);
+    xTaskCreate(taskDebouncer, (const portCHAR *)"Debouncer", 256, NULL, 1, NULL);
 
     // Dispatch I2C write commands to PCL GPIO extenders every 1 ms
-    xTaskCreate(taskPCLOutWriter, (const portCHAR *)"PCLwriter",
-            configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(taskPCLOutWriter, (const portCHAR *)"PCLwriter", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
-    vTaskStartScheduler();
+    vTaskStartScheduler();  // This should never return!
     return 0;
 }
 
