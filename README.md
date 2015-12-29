@@ -1,5 +1,5 @@
 # Fan-Tas-Tic-Controller
-Controller for Pinball machines based on an TM4C123G LaunchPad™ Evaluation Kit, compatible with the `Mission Pinball` API.
+Controller for Pinball machines based on an TM4C123G LaunchPad™ Evaluation Kit, compatible with the [Mission Pinball API](https://missionpinball.com/).
 
 ## Hardware features
  * 8x8 Switch matrix inputs
@@ -21,16 +21,17 @@ Controller for Pinball machines based on an TM4C123G LaunchPad™ Evaluation Kit
 
 # Digital inputs / outputs
 
-To use an PC8574 as input we have to write a 0xFF to it (to prevent the open drain output pulling it low). 
-Otherwise outputs and inputs can be processed the same.
+We have 4 I2C channels where we can connect 8 x PC8574 each. The addresses of the chips need to be configured from 0x40 - 0x47.
 
-Reading an output switch will readback its logical value. So all I2C extenders can be read in bulk
-I2C is fast eough to read all of them with 625 Hz repetition rate (the ones not connected will report 0xFF)
+To use an PC8574 as input we have to write a 0xFF to it (to prevent the open drain outputs pulling the pin low). 
+Then the pin state can be acquired with a 1 byte read transaction over I2C.
 
-Writing a 0 to an input switch will disable the readback and should be avoided
-Only write to the I2C addresses which have been specified as outputs!
+Reading an output switch will readback its logical value. So all I2C extenders (no matter if used as in- or output) can be read in bulk. I2C is fast enough to read all 32 of them (on 4 channels in parallel) with 625 Hz repetition rate. Reading an empty address will give a NO_ACK read error, which will be silently ignored.
 
-# The taskDebouncer() 
+Writing a 0 to an input switch will pull the pin low and hence always readback 0. So this should be avoided. The user must take care to not send `OUT` commands with a hwIndex addressing an input!
+
+# The taskDebouncer()
+
  It is a debounce routine running with 333 Hz, reading all switches (matrix and I2C) into an array
  * Switch Matrix (SM) is read in foreground
  * I2C transactions happen in background (TI I2C driver), query all port extenders (in parallel to reading the SM)
@@ -40,28 +41,7 @@ Only write to the I2C addresses which have been specified as outputs!
  * The serial reporter function looks for changeg bits, encodes them and reports them on the serial port
  * The quick-fire rule function checks a list of rules, which can be triggered by changed bits, which can lead to immediate actions, like coils firing.
 
-# WS2811 RGB LED strings
-Raw data values are attached to serial command and just sent on one of the channels over the SPI hardware
-
-# I2C
-There must be commands to do send / receive of custom bytes to custom addresses. Mutex of I2C hardware!
-
-# Serial command API
-
-        Available commands
-        ------------------
-        ?     : Display list of commands
-        *IDN? : Display ID and version info
-        SW?   : Return the state of ALL switches (40 bytes)
-        OUT   : OUT hwIndex tPulse PWMhigh PWMlow
-        OUT   : OUT hwIndex PWMvalue
-        RUL   : RUL ID IDin IDout trHoldOff tPulse pwmOn pwmOff
-                bPosEdge bAutoOff bLevelTr
-        RULE  : Enable  a previously disabled rule: RULE ID
-        RULD  : Disable a previously defined rule:  RULD ID
-        LED   : LED <CH>,<led0>,<led1> ...
-
-## `hwIndex` identify a input / output port
+# A `hwIndex` identifies an input / output port
 We use a 16 bit number to identify each input / output pin. 
 
          Switch input hwIndex addresses:
@@ -89,14 +69,47 @@ where SMrow is the row wire number (from 0-7) and SMcol is the column wire numbe
  That beeing said, I might map hwIndex 60 - 63 to the internal hardware PWM outputs on the mainboard, which do not
  use the PCF GPIO extenders. To be seen.
 
-## `OUT` Set a solenoid driver output
+# Serial command API
 
- * pulse time [ms]
- * pulse power [pwm units]
- * hold power [pwm units]
+        Available commands
+        ------------------
+        ?     : Display list of commands
+        *IDN? : Display ID and version info
+        SW?   : Return the state of ALL switches (40 bytes)
+        OUT   : OUT hwIndex tPulse PWMhigh PWMlow
+        OUT   : OUT hwIndex PWMvalue
+        RUL   : RUL ID IDin IDout trHoldOff tPulse pwmOn pwmOff
+                bPosEdge bAutoOff bLevelTr
+        RULE  : Enable  a previously disabled rule: RULE ID
+        RULD  : Disable a previously defined rule:  RULD ID
+        LED   : LED <CH>,<led0>,<led1> ...
+
+
+## `SW?` command returns the state of all Switch inputs
+Returns 40 bytes as 8 digit hex numbers. This encodes all 320 bits which can be addressed by a hwIndex.
+### Example
+Sent:
+
+    SW?
+Received:
+
+    SW:00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+
+## `OUT` command Set a solenoid driver output
+ * hwIndex 
+ * pulse time [ms] (0 - 32767), optional
+ * pwm pulse power (0-15), optional
+ * pwm hold power  (0-15)
  
-## `RUL` setup a quick-fire rule
+### Example
+Set output pin with hwIndex 0x100 to a pwm power level of 10 and keep it there.
+    OUT 0x100 10
 
+Pulse output with hwIndex 0x110 for 300 ms with a pwm power level of 10 and then keep it at a power level of 2.
+    OUT 0x110 300 10 2
+
+ 
+## `RUL` command setup a quick-fire rule
  * quickRuleId (0-64)
  * input switch ID number
  * driver output ID number
@@ -109,7 +122,6 @@ where SMrow is the row wire number (from 0-7) and SMcol is the column wire numbe
  * Enable level Trigger (no edge check)
 
 ### Notes
-
 When enabling level trigger, the edge detecion is disabled and the rule will stay in triggered state
 as long as the input is high (or low)
  
@@ -117,10 +129,14 @@ When auto. output off is enabled, the rule stays in triggered state as long as t
 
 Warning: When auto. output off is disabled and level trigger is enabled it leads to a periodic trigger condition. Sending trigger events every `triggerHoldOffTime` as long as the level is there (not so good)
 
-
-### Example command
+### Example
     RUL 0 0x23 0x100 4 1 15 3 1 1 0
+    
 Setup ruleId 0. Input hwIndex is 0x23, output hwIndex is 0x100. After triggering, at least 4 ms need to ellapse before the trigger becomes armed again. Once triggered it pulses the output for 1 ms with pwmPower 15, then it holds the output with pwmPower 3. The trigger happens on a positive edge. Once the input is released (and at least 4 ms ellapsed), the output is switched off again.
 
- 
+## `LED` command controls WS2811 RGB LED strings
+Raw data values are attached to serial command and just sent on one of the channels over the SPI hardware
+
+## `I2C` command does a custom I2C transaction
+Not yet implemented. There will be commands to do send / receive of custom bytes to custom addresses. Mutex of I2C hardware!
 
