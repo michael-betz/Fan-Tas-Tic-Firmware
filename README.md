@@ -95,25 +95,32 @@ where SMrow is the row wire number (from 0-7) and SMcol is the column wire numbe
  * pulse power [pwm units]
  * hold power [pwm units]
  
- ## `RUL` setup a quick-fire rule
+## `RUL` setup a quick-fire rule
 
-  * quickRuleId (0-64)
-  * input switch ID number
-  * driver output ID number
-  * post trigger hold-off time [ms]
-  * pulse duration [ms]
-  * pulse pwm [only for output ID 0-3 which are the pwm channels]
-  * hold pwm  [only for output ID 0-3 which are the pwm channels]
-  * Enable trigger on pos edge?
-  * Enable auto. output off once input releases
-  * Enable level Trigger (no edge check)
+ * quickRuleId (0-64)
+ * input switch ID number
+ * driver output ID number
+ * post trigger hold-off time [ms]
+ * pulse duration [ms]
+ * pulse pwm (0-15)
+ * hold pwm  (0-15)
+ * Enable trigger on pos edge?
+ * Enable auto. output off once input releases
+ * Enable level Trigger (no edge check)
+
+### Notes
+
+When enabling level trigger, the edge detecion is disabled and the rule will stay in triggered state
+as long as the input is high (or low)
+ 
+When auto. output off is enabled, the rule stays in triggered state as long as the level is high. When the level is low again, it disables the outputs and arms the trigger again.
+
+Warning: When auto. output off is disabled and level trigger is enabled it leads to a periodic trigger condition. Sending trigger events every `triggerHoldOffTime` as long as the level is there (not so good)
+
 
 ### Example command
-
-        RUL ID IDin IDout trHoldOff tPulse pwmOn pwmOff bPosEdge bAutoOff bLevelTr
-        RUL 0  0x23 0x100 4         1      15    3      1        0        0
-
-Note: remove multiple spaces!
+    RUL 0 0x23 0x100 4 1 15 3 1 1 0
+Setup ruleId 0. Input hwIndex is 0x23, output hwIndex is 0x100. After triggering, at least 4 ms need to ellapse before the trigger becomes armed again. Once triggered it pulses the output for 1 ms with pwmPower 15, then it holds the output with pwmPower 3. The trigger happens on a positive edge. Once the input is released (and at least 4 ms ellapsed), the output is switched off again.
 
  
 
