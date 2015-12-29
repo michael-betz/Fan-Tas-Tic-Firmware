@@ -103,9 +103,11 @@ Received:
  
 ### Example
 Set output pin with hwIndex 0x100 to a pwm power level of 10 and keep it there.
+
     OUT 0x100 10
 
 Pulse output with hwIndex 0x110 for 300 ms with a pwm power level of 10 and then keep it at a power level of 2.
+
     OUT 0x110 300 10 2
 
  
