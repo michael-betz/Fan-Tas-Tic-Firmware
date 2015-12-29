@@ -96,10 +96,11 @@ When a switch input flips its state, its hwIndex and new state is immediately re
 
 __Example__
 
-The input with hwIndex 0x0F8 changed to 1, 0x0FC changed to 0 and 0x0FE changed to 1 
+The input with hwIndex 0x0F8 changed to 1, 0x0FC changed to 0 and 0x0FE changed to 1
+ 
 Received:
 
-        SE:0f8=1 0fa=1 0fc=0 0fe=1;
+        SE:0f8=1 0fa=1 0fc=0 0fe=1
 
 ## `SW?` returns the state of all Switch inputs
 Returns 40 bytes as 8 digit hex numbers. This encodes all 320 bits which can be addressed by a hwIndex.
@@ -115,9 +116,9 @@ Received:
 
 ## `OUT` set a solenoid driver output
  * hwIndex 
- * pulse time [ms] (0 - 32767), optional
- * pwm pulse power (0-15), optional
  * pwm hold power  (0-15)
+ * pulse time in ms  (0 - 32767), optional
+ * pwm pulse power (0-15), optional 
  
 __Example__
 
@@ -127,7 +128,7 @@ Set output pin with hwIndex 0x100 to a pwm power level of 10 and keep it there.
 
 Pulse output with hwIndex 0x110 for 300 ms with a pwm power level of 10 and then keep it at a power level of 2.
 
-        OUT 0x110 300 10 2
+        OUT 0x110 2 300 10
 
  
 ## `RUL` setup and enable a quick-fire rule
@@ -141,6 +142,26 @@ Pulse output with hwIndex 0x110 for 300 ms with a pwm power level of 10 and then
  * Enable trigger on pos edge?
  * Enable auto. output off once input releases
  * Enable level Trigger (no edge check)
+
+
+### Logic for each rule
+
+        If a rule is enabled:
+            If it is currently triggered:
+                If holdOff time expired:
+                    If OFF_ON_RELEASE flag is set:
+                        If input is released:
+                            switch output Off
+                            set Rule to untriggered state
+                    Else:
+                        set Rule to untriggered state
+                Else:
+                    decrement holdOff time
+            else:
+                Check if the input matches the trigger condition:
+                    Set Rule to triggered state
+                    switch output ON
+
 
 ### Notes
 When enabling level trigger, the edge detecion is disabled and the rule will stay in triggered state

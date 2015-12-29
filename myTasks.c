@@ -338,8 +338,8 @@ int Cmd_SW(int argc, char *argv[]) {
 }
 
 int Cmd_OUT(int argc, char *argv[]) {
-//    OUT <hwIndex> <tPulse> <PWMhigh> <PWMlow>  or OUT <hwIndex> <PWMvalue>
-//    OUT 0x0FE 1500 15 1
+//    OUT <hwIndex> <PWMlow> <tPulse> <PWMhigh>   or OUT <hwIndex> <PWMvalue>
+//    OUT 0x0FE 1 1500 15
 //    OUT 0x0FE 2
     int32_t hwIndex;
     t_outputBit outLocation;
@@ -347,13 +347,13 @@ int Cmd_OUT(int argc, char *argv[]) {
     if (argc == 3 || argc == 5) {
         hwIndex = ustrtoul(argv[1], NULL, 0);
         if (argc == 5) {
-            tPulse = ustrtoul(argv[2], NULL, 0);
-            pwmHigh = ustrtoul(argv[3], NULL, 0);
-            pwmLow = ustrtoul(argv[4], NULL, 0);
+            tPulse = ustrtoul(argv[3], NULL, 0);
+            pwmHigh = ustrtoul(argv[4], NULL, 0);
+            pwmLow = ustrtoul(argv[2], NULL, 0);
         } else if (argc == 3) {
             tPulse = 0;
-            pwmHigh = ustrtoul(argv[2], NULL, 0);
-            pwmLow = pwmHigh;
+            pwmLow = ustrtoul(argv[2], NULL, 0);
+            pwmHigh = pwmLow;
         }
         if (pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM)) {
             UARTprintf("Cmd_OUT(): PWMvalue must be < %d\n", (1 << N_BIT_PWM));
