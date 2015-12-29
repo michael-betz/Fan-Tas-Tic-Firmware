@@ -46,32 +46,32 @@
 
 TaskHandle_t hUSBCommandParser = NULL;
 
-void configureTimer(){
-  ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1); 	  // Enable Timer 1 Clock
-  ROM_TimerConfigure(TIMER1_BASE, TIMER_CFG_ONE_SHOT_UP); // Configure Timer Operation as one shot up counting
+void configureTimer() {
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1); 	 // Enable Timer 1 Clock
+    ROM_TimerConfigure(TIMER1_BASE, TIMER_CFG_ONE_SHOT_UP); // Configure Timer Operation as one shot up counting
 }
 
-void startTimer(){
-	ROM_TimerEnable(TIMER1_BASE, TIMER_A); // Start Timer 1A
+void startTimer() {
+    ROM_TimerEnable(TIMER1_BASE, TIMER_A); // Start Timer 1A
 }
 
-uint32_t stopTimer(){
-	uint32_t timerValue;
-	ROM_TimerDisable(TIMER1_BASE, TIMER_A); // Stop Timer 1A
-	timerValue = ROM_TimerValueGet(TIMER1_BASE, TIMER_A);
-	ROM_TimerLoadSet(TIMER1_BASE, TIMER_A, 0xFFFFFFFF);
-	HWREG(TIMER1_BASE + TIMER_O_TAV) = 0;
-	return( timerValue );
+uint32_t stopTimer() {
+    uint32_t timerValue;
+    ROM_TimerDisable(TIMER1_BASE, TIMER_A); // Stop Timer 1A
+    timerValue = ROM_TimerValueGet(TIMER1_BASE, TIMER_A);
+    ROM_TimerLoadSet(TIMER1_BASE, TIMER_A, 0xFFFFFFFF);
+    HWREG(TIMER1_BASE + TIMER_O_TAV) = 0;
+    return (timerValue);
 }
 
 // Main function
-int main(void){
+int main(void) {
     // Initialize system clock to 120 MHz
     uint32_t output_clock_rate_hz;
     output_clock_rate_hz = ROM_SysCtlClockFreqSet(
-                               (SYSCTL_XTAL_25MHZ | SYSCTL_OSC_MAIN |
-                                SYSCTL_USE_PLL | SYSCTL_CFG_VCO_480),
-                               SYSTEM_CLOCK);
+            (SYSCTL_XTAL_25MHZ | SYSCTL_OSC_MAIN |
+            SYSCTL_USE_PLL | SYSCTL_CFG_VCO_480),
+            SYSTEM_CLOCK);
     ASSERT(output_clock_rate_hz == SYSTEM_CLOCK);
 
     // Initialize the GPIO pins for the Launchpad
@@ -80,9 +80,9 @@ int main(void){
     // Set up the UART which is connected to the virtual COM port
     UARTStdioConfig(0, 115200, SYSTEM_CLOCK);
     UARTprintf("\n\n\n\n"
-    		   "**************************************************\n"
-    		   " Hi, here's the brain of Fan-Tas-Tic Pinball V0.0 \n"
-    		   "**************************************************\n\n");
+            "**************************************************\n"
+            " Hi, here's the brain of Fan-Tas-Tic Pinball V0.0 \n"
+            "**************************************************\n\n");
 
     configureTimer();
     initMyI2C();
@@ -110,24 +110,28 @@ int main(void){
     // Startup the FreeRTOS scheduler
     //*****************************************************************************
     // Create demo tasks
-    xTaskCreate(taskDemoLED, (const portCHAR *)"LEDr", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
+    xTaskCreate(taskDemoLED, (const portCHAR *)"LEDr", configMINIMAL_STACK_SIZE,
+            NULL, 1, NULL);
 
     // Create USB command parser task
-    xTaskCreate( taskUsbCommandParser, (const portCHAR *)"Parser", 256, NULL, 1, &hUSBCommandParser );
+    xTaskCreate(taskUsbCommandParser, (const portCHAR *)"Parser", 256, NULL, 1,
+            &hUSBCommandParser);
 
     // Create I2C / Matrix debouncer
-	xTaskCreate( taskDebouncer, (const portCHAR *)"Debouncer", 256, NULL, 1, NULL );
+    xTaskCreate(taskDebouncer, (const portCHAR *)"Debouncer", 256, NULL, 1,
+            NULL);
 
-	// Dispatch I2C write commands to PCL GPIO extenders every 1 ms
-	xTaskCreate( taskPCLOutWriter, (const portCHAR *)"PCLwriter", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
+    // Dispatch I2C write commands to PCL GPIO extenders every 1 ms
+    xTaskCreate(taskPCLOutWriter, (const portCHAR *)"PCLwriter",
+            configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
     vTaskStartScheduler();
     return 0;
 }
 
-
 //ASSERT() Error function failed ASSERTS() from driverlib/debug.h are executed in this function
-void __error__(char *pcFilename, uint32_t ui32Line){
+void __error__(char *pcFilename, uint32_t ui32Line) {
     UARTprintf("__error__( %s, %d )", pcFilename, ui32Line);
-    while(1); // Place a breakpoint here to capture errors until logging routine is finished
+    while (1)
+        ; // Place a breakpoint here to capture errors until logging routine is finished
 }
