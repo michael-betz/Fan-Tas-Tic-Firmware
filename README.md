@@ -85,7 +85,7 @@ where SMrow is the row wire number (from 0-7) and SMcol is the column wire numbe
         LED   : LED <CH>,<led0>,<led1> ...
 
 
-## `SW?` command returns the state of all Switch inputs
+## `SW?` returns the state of all Switch inputs
 Returns 40 bytes as 8 digit hex numbers. This encodes all 320 bits which can be addressed by a hwIndex.
 ### Example
 Sent:
@@ -95,7 +95,7 @@ Received:
 
     SW:00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
 
-## `OUT` command Set a solenoid driver output
+## `OUT` set a solenoid driver output
  * hwIndex 
  * pulse time [ms] (0 - 32767), optional
  * pwm pulse power (0-15), optional
@@ -111,7 +111,7 @@ Pulse output with hwIndex 0x110 for 300 ms with a pwm power level of 10 and then
     OUT 0x110 300 10 2
 
  
-## `RUL` command setup a quick-fire rule
+## `RUL` setup and enable a quick-fire rule
  * quickRuleId (0-64)
  * input switch ID number
  * driver output ID number
@@ -136,9 +136,9 @@ Warning: When auto. output off is disabled and level trigger is enabled it leads
     
 Setup ruleId 0. Input hwIndex is 0x23, output hwIndex is 0x100. After triggering, at least 4 ms need to ellapse before the trigger becomes armed again. Once triggered it pulses the output for 1 ms with pwmPower 15, then it holds the output with pwmPower 3. The trigger happens on a positive edge. Once the input is released (and at least 4 ms ellapsed), the output is switched off again.
 
-## `LED` command controls WS2811 RGB LED strings
+## `LED` dump data to WS2811 RGB LED strings
 Raw data values are attached to serial command and just sent on one of the channels over the SPI hardware
 
-## `I2C` command does a custom I2C transaction
+## `I2C` does a custom I2C transaction
 Not yet implemented. There will be commands to do send / receive of custom bytes to custom addresses. Mutex of I2C hardware!
 
