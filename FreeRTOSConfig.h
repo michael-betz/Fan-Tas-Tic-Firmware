@@ -92,8 +92,8 @@
 #define configUSE_IDLE_HOOK             0
 #define configUSE_TICK_HOOK             0
 #define configMAX_PRIORITIES            ( 5 )
-#define configMINIMAL_STACK_SIZE        ( ( unsigned short ) 200 )
-#define configTOTAL_HEAP_SIZE           ( ( size_t ) ( 50000 ) )
+#define configMINIMAL_STACK_SIZE        ( ( unsigned short ) 64 )
+#define configTOTAL_HEAP_SIZE           ( ( size_t ) ( 10000 ) )
 #define configMAX_TASK_NAME_LEN         ( 10 )
 #define configUSE_TRACE_FACILITY        1
 #define configUSE_16_BIT_TICKS          0
@@ -125,6 +125,7 @@ to exclude the API function. */
 #define INCLUDE_vTaskSuspend            1
 #define INCLUDE_vTaskDelayUntil         1
 #define INCLUDE_vTaskDelay              1
+#define INCLUDE_uxTaskGetStackHighWaterMark 1
 
 
 /* The highest interrupt priority that can be used by any interrupt service

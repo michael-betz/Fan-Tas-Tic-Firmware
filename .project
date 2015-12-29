@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
-	<name>FreeRTOS8.2_tiva_demo</name>
+	<name>Fan-Tas-Tic-Controller</name>
 	<comment></comment>
 	<projects>
 	</projects>
@@ -24,4 +24,32 @@
 		<nature>org.eclipse.cdt.core.ccnature</nature>
 		<nature>org.eclipse.cdt.managedbuilder.core.ScannerConfigNature</nature>
 	</natures>
+	<linkedResources>
+		<link>
+			<name>utils/cmdline.c</name>
+			<type>1</type>
+			<location>/home/michael/ti/TiviaWare/utils/cmdline.c</location>
+		</link>
+		<link>
+			<name>utils/i2cm_drv.c</name>
+			<type>1</type>
+			<location>/home/michael/ti/TiviaWare/sensorlib/i2cm_drv.c</location>
+		</link>
+		<link>
+			<name>utils/uartstdio.c</name>
+			<type>1</type>
+			<locationURI>SW_ROOT/utils/uartstdio.c</locationURI>
+		</link>
+		<link>
+			<name>utils/ustdlib.c</name>
+			<type>1</type>
+			<locationURI>SW_ROOT/utils/ustdlib.c</locationURI>
+		</link>
+	</linkedResources>
+	<variableList>
+		<variable>
+			<name>SW_ROOT</name>
+			<value>file:/home/michael/ti/TiviaWare</value>
+		</variable>
+	</variableList>
 </projectDescription>

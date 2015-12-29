@@ -58,6 +58,12 @@ extern uint32_t __STACK_TOP;
 extern void xPortPendSVHandler(void);
 extern void vPortSVCHandler(void);
 extern void xPortSysTickHandler(void);
+extern void USB0DeviceIntHandler(void);
+extern void UARTStdioIntHandler(void);
+extern void i2CIntHandler0(void);
+extern void i2CIntHandler1(void);
+extern void i2CIntHandler2(void);
+extern void i2CIntHandler3(void);
 
 
 //*****************************************************************************
@@ -92,10 +98,11 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // GPIO Port C
     IntDefaultHandler,                      // GPIO Port D
     IntDefaultHandler,                      // GPIO Port E
-    IntDefaultHandler,                      // UART0 Rx and Tx
+	UARTStdioIntHandler,                    // UART0 Rx and Tx
+//	IntDefaultHandler,                      // UART0 Rx and Tx
     IntDefaultHandler,                      // UART1 Rx and Tx
     IntDefaultHandler,                      // SSI0 Rx and Tx
-    IntDefaultHandler,                      // I2C0 Master and Slave
+	i2CIntHandler0,                         // I2C0 Master and Slave
     IntDefaultHandler,                      // PWM Fault
     IntDefaultHandler,                      // PWM Generator 0
     IntDefaultHandler,                      // PWM Generator 1
@@ -124,12 +131,12 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // SSI1 Rx and Tx
     IntDefaultHandler,                      // Timer 3 subtimer A
     IntDefaultHandler,                      // Timer 3 subtimer B
-    IntDefaultHandler,                      // I2C1 Master and Slave
+	i2CIntHandler1,                         // I2C1 Master and Slave
     IntDefaultHandler,                      // CAN0
     IntDefaultHandler,                      // CAN1
     IntDefaultHandler,                      // Ethernet
     IntDefaultHandler,                      // Hibernate
-    IntDefaultHandler,                      // USB0
+	USB0DeviceIntHandler,                   // USB0
     IntDefaultHandler,                      // PWM Generator 3
     IntDefaultHandler,                      // uDMA Software Transfer
     IntDefaultHandler,                      // uDMA Error
@@ -148,8 +155,8 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // UART5 Rx and Tx
     IntDefaultHandler,                      // UART6 Rx and Tx
     IntDefaultHandler,                      // UART7 Rx and Tx
-    IntDefaultHandler,                      // I2C2 Master and Slave
-    IntDefaultHandler,                      // I2C3 Master and Slave
+	i2CIntHandler2,                         // I2C2 Master and Slave
+	i2CIntHandler3,                         // I2C3 Master and Slave
     IntDefaultHandler,                      // Timer 4 subtimer A
     IntDefaultHandler,                      // Timer 4 subtimer B
     IntDefaultHandler,                      // Timer 5 subtimer A

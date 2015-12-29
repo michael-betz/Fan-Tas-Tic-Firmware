@@ -10,31 +10,62 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "main.h"
 #include "drivers/pinout.h"
-#include "utils/uartstdio.h"
+#include "inc/hw_memmap.h"
+#include "inc/hw_types.h"
+#include "inc/hw_timer.h"
+#include "driverlib/rom.h"
+#include "driverlib/timer.h"
 
+#include "sensorlib/i2cm_drv.h"
+#include "utils/uartstdio.h"
 
 // TivaWare includes
 #include "driverlib/sysctl.h"
 #include "driverlib/debug.h"
 #include "driverlib/rom.h"
-#include "driverlib/rom_map.h"
 
 // FreeRTOS includes
 #include "FreeRTOSConfig.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
+#include "semphr.h"
 
+//USB stuff
+#include "usblib/usblib.h"
+#include "usblib/usbcdc.h"
+#include "usblib/device/usbdevice.h"
+#include "usblib/device/usbdcdc.h"
+#include "usb_serial_structs.h"
 
-// Demo Task declarations
-void demoLEDTask(void *pvParameters);
-void demoSerialTask(void *pvParameters);
+//My stuff
+#include "main.h"
+#include "myTasks.h"
+#include "i2cHandlerTask.h"
+
+TaskHandle_t hUSBCommandParser = NULL;
+
+void configureTimer(){
+  ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1); 	  // Enable Timer 1 Clock
+  ROM_TimerConfigure(TIMER1_BASE, TIMER_CFG_ONE_SHOT_UP); // Configure Timer Operation as one shot up counting
+}
+
+void startTimer(){
+	ROM_TimerEnable(TIMER1_BASE, TIMER_A); // Start Timer 1A
+}
+
+uint32_t stopTimer(){
+	uint32_t timerValue;
+	ROM_TimerDisable(TIMER1_BASE, TIMER_A); // Stop Timer 1A
+	timerValue = ROM_TimerValueGet(TIMER1_BASE, TIMER_A);
+	ROM_TimerLoadSet(TIMER1_BASE, TIMER_A, 0xFFFFFFFF);
+	HWREG(TIMER1_BASE + TIMER_O_TAV) = 0;
+	return( timerValue );
+}
 
 // Main function
-int main(void)
-{
+int main(void){
     // Initialize system clock to 120 MHz
     uint32_t output_clock_rate_hz;
     output_clock_rate_hz = ROM_SysCtlClockFreqSet(
@@ -44,66 +75,59 @@ int main(void)
     ASSERT(output_clock_rate_hz == SYSTEM_CLOCK);
 
     // Initialize the GPIO pins for the Launchpad
-    PinoutSet(false, false);
+    PinoutSet(false, true);
 
+    // Set up the UART which is connected to the virtual COM port
+    UARTStdioConfig(0, 115200, SYSTEM_CLOCK);
+    UARTprintf("\n\n\n\n"
+    		   "**************************************************\n"
+    		   " Hi, here's the brain of Fan-Tas-Tic Pinball V0.0 \n"
+    		   "**************************************************\n\n");
+
+    configureTimer();
+    initMyI2C();
+
+    // Enable lazy stacking for interrupt handlers.  This allows floating-point
+    // instructions to be used within interrupt handlers, but at the expense of
+    // extra stack usage.
+    ROM_FPULazyStackingEnable();
+
+    // Configure the required pins for USB operation.
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_USB0);
+
+    // Initialize the transmit and receive buffers.
+    USBBufferInit(&g_sTxBuffer);
+    USBBufferInit(&g_sRxBuffer);
+
+    // Set the USB stack mode to Device mode with VBUS monitoring.
+    USBStackModeSet(0, eUSBModeForceDevice, 0);
+
+    // Pass our device information to the USB library and place the device
+    // on the bus.
+    USBDCDCInit(0, &g_sCDCDevice);
+
+    //*****************************************************************************
+    // Startup the FreeRTOS scheduler
+    //*****************************************************************************
     // Create demo tasks
-    xTaskCreate(demoLEDTask, (const portCHAR *)"LEDs",
-                configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(taskDemoLED, (const portCHAR *)"LEDr", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
 
-    xTaskCreate(demoSerialTask, (const portCHAR *)"Serial",
-                configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+    // Create USB command parser task
+    xTaskCreate( taskUsbCommandParser, (const portCHAR *)"Parser", 256, NULL, 1, &hUSBCommandParser );
+
+    // Create I2C / Matrix debouncer
+	xTaskCreate( taskDebouncer, (const portCHAR *)"Debouncer", 256, NULL, 1, NULL );
+
+	// Dispatch I2C write commands to PCL GPIO extenders every 1 ms
+	xTaskCreate( taskPCLOutWriter, (const portCHAR *)"PCLwriter", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
 
     vTaskStartScheduler();
     return 0;
 }
 
 
-// Flash the LEDs on the launchpad
-void demoLEDTask(void *pvParameters)
-{
-    for (;;)
-    {
-        // Turn on LED 1
-        LEDWrite(0x0F, 0x01);
-        vTaskDelay(1000);
-
-        // Turn on LED 2
-        LEDWrite(0x0F, 0x02);
-        vTaskDelay(1000);
-
-        // Turn on LED 3
-        LEDWrite(0x0F, 0x04);
-        vTaskDelay(1000);
-
-        // Turn on LED 4
-        LEDWrite(0x0F, 0x08);
-        vTaskDelay(1000);
-    }
-}
-
-
-// Write text over the Stellaris debug interface UART port
-void demoSerialTask(void *pvParameters)
-{
-    // Set up the UART which is connected to the virtual COM port
-    UARTStdioConfig(0, 57600, SYSTEM_CLOCK);
-
-
-    for (;;)
-    {
-        UARTprintf("\r\nHello, world!");
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
-    }
-}
-
-/*  ASSERT() Error function
- *
- *  failed ASSERTS() from driverlib/debug.h are executed in this function
- */
-void __error__(char *pcFilename, uint32_t ui32Line)
-{
-    // Place a breakpoint here to capture errors until logging routine is finished
-    while (1)
-    {
-    }
+//ASSERT() Error function failed ASSERTS() from driverlib/debug.h are executed in this function
+void __error__(char *pcFilename, uint32_t ui32Line){
+    UARTprintf("__error__( %s, %d )", pcFilename, ui32Line);
+    while(1); // Place a breakpoint here to capture errors until logging routine is finished
 }
