@@ -5,16 +5,16 @@ Controller for Pinball machines based on an TM4C123G LaunchPad™ Evaluation Kit
  * 8x8 Switch matrix inputs
  * 12 onboard drivers for solenoids, 4 of them can do hardware PWM (> 100 kHz)
  * 4 x I2C channels for extension boards
- * 2 x SPI channels for running WS2811 / WS2812 LED strings
- * In- / Outputs can be easily and cheaply added with PCF8574 I2C GPIO extenders (check eBay)
- * USB serial connection to host PC
- * PCB files available, no tiny SMD components, can be easily assembled by hand
+ * 2 x SPI channels for running [WS2811 / WS2812 LED strings](http://www.ebay.com/sch/i.html?_from=R40&_trksid=p2050601.m570.l1313.TR0.TRC0.H0.Xled+strand+ws2811.TRS5&_nkw=led+strand+ws2811&_sacat=0)
+ * In- / Outputs can be easily and cheaply added with [PCF8574](http://www.ti.com/product/pcf8574) I2C GPIO extenders (check eBay for [cheap I/O modules](http://www.ebay.com/sch/i.html?_sacat=0&_nkw=i2c+expander&_frs=1))
+ * Super fast USB virtual serial connection to host PC
+ * KiCad PCB files available (soon), no tiny SMD components, can be easily assembled by hand
 
 ## Software features 
  * Software can handle up to 320 In- / Outputs
- * All Outputs support 4 bit PWM with > 125 Hz (using binary code modulation)
+ * All Outputs support 4 bit PWM with > 125 Hz (using [binary code modulation](http://www.batsocks.co.uk/readme/art_bcm_1.htm))
  * All inputs are debounced and read 333 times per second
- * Software easily extendable by running FreeRTOS
+ * Software easily extendable by running [FreeRTOS](http://www.freertos.org/)
 
 
 
