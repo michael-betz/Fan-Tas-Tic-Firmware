@@ -45,7 +45,7 @@ typedef struct {
 typedef union {
     t_switchState switchState;
     uint32_t longValues[N_LONGS]; //Should be 10 long
-    uint8_t charValues[N_CHARS]; //Should be 40 byte
+    uint8_t charValues[N_CHARS];  //Should be 40 byte
 } t_switchStateConverter;
 
 // Configure QuickRule:

@@ -64,6 +64,10 @@ extern void i2CIntHandler0(void);
 extern void i2CIntHandler1(void);
 extern void i2CIntHandler2(void);
 extern void i2CIntHandler3(void);
+extern void spiISR( uint8_t channel );
+void spiISR0(){ spiISR(0); }
+void spiISR1(){ spiISR(1); }
+void spiISR2(){ spiISR(2); }
 
 
 //*****************************************************************************
@@ -128,7 +132,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // GPIO Port G
     IntDefaultHandler,                      // GPIO Port H
     IntDefaultHandler,                      // UART2 Rx and Tx
-    IntDefaultHandler,                      // SSI1 Rx and Tx
+    spiISR0,                                // SSI1 Rx and Tx
     IntDefaultHandler,                      // Timer 3 subtimer A
     IntDefaultHandler,                      // Timer 3 subtimer B
 	i2CIntHandler1,                         // I2C1 Master and Slave
@@ -148,8 +152,8 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // GPIO Port J
     IntDefaultHandler,                      // GPIO Port K
     IntDefaultHandler,                      // GPIO Port L
-    IntDefaultHandler,                      // SSI2 Rx and Tx
-    IntDefaultHandler,                      // SSI3 Rx and Tx
+    spiISR1,                                // SSI2 Rx and Tx
+    spiISR2,                                // SSI3 Rx and Tx
     IntDefaultHandler,                      // UART3 Rx and Tx
     IntDefaultHandler,                      // UART4 Rx and Tx
     IntDefaultHandler,                      // UART5 Rx and Tx

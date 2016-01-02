@@ -13,8 +13,13 @@
 #include "driverlib/debug.h"
 #include "drivers/pinout.h"
 #include "inc/hw_memmap.h"
+#include "driverlib/rom.h"
 #include "inc/hw_types.h"
+#include "inc/hw_ints.h"
 #include "driverlib/i2c.h"
+#include "driverlib/ssi.h"
+#include "driverlib/pin_map.h"
+#include "driverlib/gpio.h"
 #include "sensorlib/i2cm_drv.h"
 #include "driverlib/sysctl.h"
 
@@ -41,6 +46,26 @@
 
 // Global vars
 t_PCLOutputByte g_outWriterList[OUT_WRITER_LIST_LEN];   // A list to keep track of the state of all output pins
+t_spiTransferState g_spiState[3];
+
+const uint16_t g_ssi_lut[16] = {                        // Encodes a 4 bit nibble to a 16 bit SPI word
+    0b1000100010001000,     //0                         // The SPI modules sends MSB first!
+    0b1000100010001100,     //1
+    0b1000100011001000,     //2
+    0b1000100011001100,     //3
+    0b1000110010001000,     //4
+    0b1000110010001100,     //5
+    0b1000110011001000,     //6
+    0b1000110011001100,     //7
+    0b1100100010001000,     //8
+    0b1100100010001100,     //9
+    0b1100100011001000,     //A
+    0b1100100011001100,     //B
+    0b1100110010001000,     //C
+    0b1100110010001100,     //D
+    0b1100110011001000,     //E
+    0b1100110011001100,     //F
+};
 
 //-----------------------
 // Command parser
@@ -50,11 +75,11 @@ tCmdLineEntry g_psCmdTable[] = {
         { "?",     Cmd_help, ": Display list of commands" },
         { "*IDN?", Cmd_IDN,  ": Display ID and version info" },
         { "SW?",   Cmd_SW,   ": Return the state of ALL switches (40 bytes)" },
-        { "OUT",   Cmd_OUT,  ": OUT hwIndex tPulse PWMhigh PWMlow\nOUT   : OUT hwIndex PWMvalue" },
-        { "RUL",   Cmd_RUL,  ": RUL ID IDin IDout trHoldOff tPulse pwmOn pwmOff\n        bPosEdge bAutoOff bLevelTr" },
-        { "RULE",  Cmd_RULE, ": Enable  a previously disabled rule: RULE ID" },
-        { "RULD",  Cmd_RULD, ": Disable a previously defined rule:  RULD ID" },
-        { "LED",   Cmd_LED,  ": LED <CH>,<led0>,<led1> ..." },
+        { "OUT",   Cmd_OUT,  ": OUT <hwIndex> <tPulse> <PWMhigh> <PWMlow>\nOUT   : OUT <hwIndex> <PWMvalue>" },
+        { "RUL",   Cmd_RUL,  ": RUL <ID> <IDin> <IDout> <trHoldOff> <tPulse>\n        <pwmOn> <pwmOff> <bPosEdge> <bAutoOff> <bLevelTr>" },
+        { "RULE",  Cmd_RULE, ": Enable  a previously disabled rule: RULE <ID>" },
+        { "RULD",  Cmd_RULD, ": Disable a previously defined rule:  RULD <ID>" },
+        { "LED",   Cmd_LED,  ": LED <channel> <nBytes>\\n<binary blob of nBytes>" },
         { 0, 0, 0 } };
 
 uint16_t strMyStrip(uint8_t *cmdString, uint16_t cmdLen) {
@@ -91,38 +116,40 @@ void taskDemoLED(void *pvParameters) {
     }
 }
 
-void taskUsbCommandParser(void *pvParameters) {
+void taskUsbCommandParser( void *pvParameters ) {
     // Read data from USB serial and parse it
     UARTprintf("%22s: %s", "taskUsbCommandParser()", "Started!\n");
     static uint8_t charBuffer[CMD_PARSER_BUF_LEN];
 //    uint32_t minStackSpace;
-    uint16_t nCharsRead = 0;
-    charBuffer[CMD_PARSER_BUF_LEN - 1] = '\0';
+    uint32_t nCharsRead=0, tempCharsRead;
+    int retVal;
+    uint8_t *writePointer = charBuffer;
     while (1) {
         if (ulTaskNotifyTake( pdTRUE, portMAX_DELAY)) {    // Wait for receiving new serial data over USB
-            while (USBBufferDataAvailable(&g_sRxBuffer)) {
-                nCharsRead += USBBufferRead(&g_sRxBuffer,
-                        &charBuffer[nCharsRead],
-                        CMD_PARSER_BUF_LEN - nCharsRead);
-                char lastChar = charBuffer[nCharsRead - 1];
-                if (lastChar == '\n' || lastChar == '\r' || lastChar == '\0') {
-                    nCharsRead = strMyStrip(charBuffer, nCharsRead);
-                    int retVal = CmdLineProcess((char*) charBuffer);
+            while ( USBBufferDataAvailable(&g_sRxBuffer) ) {
+                tempCharsRead = USBBufferRead(&g_sRxBuffer, writePointer, CMD_PARSER_BUF_LEN-nCharsRead-1 );
+                writePointer += tempCharsRead-1;           //Points to last character now
+                nCharsRead += tempCharsRead;
+                if( nCharsRead>=(CMD_PARSER_BUF_LEN-1) || *writePointer=='\n' || *writePointer=='\r' || *writePointer=='\0' ){
+                    retVal = CmdLineProcess( (char*)charBuffer, nCharsRead );
                     switch (retVal) {
-                    case CMDLINE_BAD_CMD:
-                        UARTprintf("[CMDLINE_BAD_CMD] %s\n", charBuffer);
-                        break;
-                    case CMDLINE_INVALID_ARG:
-                        UARTprintf("[CMDLINE_INVALID_ARG] %s\n", charBuffer);
-                        break;
-                    case CMDLINE_TOO_FEW_ARGS:
-                        UARTprintf("[CMDLINE_TOO_FEW_ARGS] %s\n", charBuffer);
-                        break;
-                    case CMDLINE_TOO_MANY_ARGS:
-                        UARTprintf("[CMDLINE_TOO_MANY_ARGS] %s\n", charBuffer);
-                        break;
+                     case CMDLINE_BAD_CMD:
+                         UARTprintf("[CMDLINE_BAD_CMD] %s\n", charBuffer);
+                         break;
+                     case CMDLINE_INVALID_ARG:
+                         UARTprintf("[CMDLINE_INVALID_ARG] %s\n", charBuffer);
+                         break;
+                     case CMDLINE_TOO_FEW_ARGS:
+                         UARTprintf("[CMDLINE_TOO_FEW_ARGS] %s\n", charBuffer);
+                         break;
+                     case CMDLINE_TOO_MANY_ARGS:
+                         UARTprintf("[CMDLINE_TOO_MANY_ARGS] %s\n", charBuffer);
+                         break;
                     }
                     nCharsRead = 0;
+                    writePointer = charBuffer;
+                } else {
+                    writePointer++;                     //Points to first free position in charBuffer now
                 }
                 ASSERT(nCharsRead < CMD_PARSER_BUF_LEN);// Check for buffer overflow due to too long command
             }
@@ -165,7 +192,7 @@ void taskPCLOutWriter(void *pvParameters) {
     UARTprintf("%22s: %s", "taskPCLOutWriter()", "Started!\n");
     uint8_t i, j, lastTickCount = 0;
     uint8_t bcmCycleCounter = 0;    //Which bit to output
-    uint32_t c = 0, ticks;
+//    uint32_t c = 0, ticks;
     TickType_t xLastWakeTime;
     t_PCLOutputByte *outListPtr = g_outWriterList;
 //    -------------------------------------------------------
@@ -202,19 +229,19 @@ void taskPCLOutWriter(void *pvParameters) {
         //---------------------------------
         // Measure ticks for profiling
         //---------------------------------
-        ticks = stopTimer();
-        c++;
-        if (c >= 3000) {
-            c = 0;
-            UARTprintf("%22s: %d ticks\n", "taskPCLOutWriter()", ticks);
-        }
+//        ticks = stopTimer();
+//        c++;
+//        if (c >= 3000) {
+//            c = 0;
+//            UARTprintf("%22s: %d ticks\n", "taskPCLOutWriter()", ticks);
+//        }
         //-----------------------------------------
         // Delay until next bit needs to be output
         //-----------------------------------------
         // SET0, 1 ms, SET1, 2 ms, SET2, 4 ms, SET3, 8 ms, repeat
         lastTickCount = (1 << bcmCycleCounter);
         vTaskDelayUntil(&xLastWakeTime, lastTickCount);
-        startTimer();
+//        startTimer();
         bcmCycleCounter++;
         if (bcmCycleCounter >= N_BIT_PWM) {
             bcmCycleCounter = 0;
@@ -297,7 +324,7 @@ t_outputBit decodeHwIndex(uint16_t hwIndex) {
 }
 
 // This function implements the "help" command.  It prints a simple list of the available commands with a brief description.
-int Cmd_help(int argc, char *argv[]) {
+int Cmd_help(uint16_t nMax, int argc, char *argv[]) {
     tCmdLineEntry *pEntry;
     UARTprintf("\nAvailable commands\n");
     UARTprintf("------------------\n");
@@ -311,12 +338,12 @@ int Cmd_help(int argc, char *argv[]) {
     return (0);                                                // Return success.
 }
 
-int Cmd_IDN(int argc, char *argv[]) {
+int Cmd_IDN(uint16_t nMax, int argc, char *argv[]) {
     UARTprintf( VERSION_INFO);
     return (0);
 }
 
-int Cmd_SW(int argc, char *argv[]) {
+int Cmd_SW(uint16_t nMax, int argc, char *argv[]) {
     // Report state of all switches
     static char outBuffer[REPORT_SWITCH_BUF_SIZE];
     uint16_t charsWritten = 3;
@@ -337,7 +364,7 @@ int Cmd_SW(int argc, char *argv[]) {
     return (0);
 }
 
-int Cmd_OUT(int argc, char *argv[]) {
+int Cmd_OUT(uint16_t nMax, int argc, char *argv[]) {
 //    OUT <hwIndex> <PWMlow> <tPulse> <PWMhigh>   or OUT <hwIndex> <PWMvalue>
 //    OUT 0x0FE 1 1500 15
 //    OUT 0x0FE 2
@@ -378,7 +405,7 @@ int Cmd_OUT(int argc, char *argv[]) {
     return ( CMDLINE_TOO_FEW_ARGS);
 }
 
-int Cmd_RULE(int argc, char *argv[]) {
+int Cmd_RULE(uint16_t nMax, int argc, char *argv[]) {
     //Enable a quickfire rule
     uint8_t id;
     if (argc == 2) {
@@ -394,7 +421,7 @@ int Cmd_RULE(int argc, char *argv[]) {
     return CMDLINE_TOO_FEW_ARGS;
 }
 
-int Cmd_RULD(int argc, char *argv[]) {
+int Cmd_RULD(uint16_t nMax, int argc, char *argv[]) {
     //Disable a quickfire rule
     uint8_t id;
     if (argc == 2) {
@@ -410,7 +437,7 @@ int Cmd_RULD(int argc, char *argv[]) {
     return CMDLINE_TOO_FEW_ARGS;
 }
 
-int Cmd_RUL(int argc, char *argv[]) {
+int Cmd_RUL(uint16_t nMax, int argc, char *argv[]) {
 // Configure and activate a Quick-fire rule:
 //  * quickRuleId (0-64)
 //  * input switch ID number
@@ -472,8 +499,136 @@ int Cmd_RUL(int argc, char *argv[]) {
     return CMDLINE_TOO_FEW_ARGS;
 }
 
-int Cmd_LED(int argc, char *argv[]) {
-    UARTprintf("Blasting data to LED string on channel n\n");
-    return (0);
+uint8_t g_spiBuffer[3][N_LEDS_MAX*3];   //3 channels * 3 colors --> 9.2 kByte
+
+int Cmd_LED(uint16_t nMax, int argc, char *argv[]) {    //nMax = number of all received characters so far
+    //LED 0 128\nxxxxxx
+    uint8_t channel, *pWrite, *pRead;
+    uint32_t blobSize, blobReceived, tempReceived;
+    if( argc==3 ){
+        channel = ustrtoul(argv[1], NULL, 0);
+        if(  channel <= 2 ){
+            blobSize = ustrtoul(argv[2], NULL, 0);
+            if( blobSize%3 ){
+                UARTprintf("%22s: Invalid number of bytes (%d)\n", "Cmd_LED()", blobSize);
+                return 0;
+            }
+            blobReceived = nMax - ustrlen(argv[0]) - ustrlen(argv[1]) - ustrlen(argv[2]) - 3;
+            pWrite = (uint8_t*)&g_spiBuffer[channel];
+            pRead = (uint8_t*)argv[3];
+            memcpy( pWrite, pRead, blobReceived );
+            pWrite += blobReceived;
+            while( blobReceived < blobSize ){
+                tempReceived = USBBufferRead( &g_sRxBuffer, pWrite, blobSize-blobReceived );
+                pWrite += tempReceived;
+                blobReceived += tempReceived;
+            }
+            UARTprintf("Blasting %d bytes of data to LED string on channel %d\n", blobSize, channel);
+            spiSend( channel, blobSize );
+        }
+    } else {
+        UARTprintf("%22s: Invalid number of arguments (%d)\n", "Cmd_LED()", argc);
+    }
+    return( 0 );
 }
 
+void spiHwSetup( uint8_t channel, uint32_t ssin_base, uint8_t intNo ){
+    ROM_SSIDisable( ssin_base );
+    // USer internal 120 MHz clock
+    ROM_SSIClockSourceSet( ssin_base, SSI_CLOCK_SYSTEM );
+    // SPI at 3.2 MHz, 16 bit words (encoding 4 bit data)
+    ROM_SSIConfigSetExpClk( ssin_base, SYSTEM_CLOCK, SSI_FRF_MOTO_MODE_1, SSI_MODE_MASTER, 3200000, 16 );
+    // Enable it
+    ROM_SSIEnable( ssin_base );
+    g_spiState[channel].baseAdr = ssin_base;
+    g_spiState[channel].intNo = intNo;
+    g_spiState[channel].semaToReleaseWhenFinished = xSemaphoreCreateBinary();
+    xSemaphoreGive( g_spiState[channel].semaToReleaseWhenFinished );
+}
+
+void spiSetup(){
+    // Enable SPI modules
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_SSI1 );
+    ROM_SysCtlPeripheralReset(  SYSCTL_PERIPH_SSI1 );
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_SSI2 );
+    ROM_SysCtlPeripheralReset(  SYSCTL_PERIPH_SSI2 );
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_SSI3 );
+    ROM_SysCtlPeripheralReset(  SYSCTL_PERIPH_SSI3 );
+    // Select the pinout
+    ROM_GPIOPinConfigure( GPIO_PE4_SSI1XDAT0 );
+    ROM_GPIOPinConfigure( GPIO_PD1_SSI2XDAT0 );
+    ROM_GPIOPinConfigure( GPIO_PQ2_SSI3XDAT0 );
+    ROM_GPIOPinTypeSSI(   GPIO_PORTE_BASE, GPIO_PIN_4 );
+    ROM_GPIOPinTypeSSI(   GPIO_PORTD_BASE, GPIO_PIN_1 );
+    ROM_GPIOPinTypeSSI(   GPIO_PORTQ_BASE, GPIO_PIN_2 );
+    // Setup SPI modules
+    spiHwSetup( 0, SSI1_BASE, INT_SSI1 );
+    spiHwSetup( 1, SSI2_BASE, INT_SSI2 );
+    spiHwSetup( 2, SSI3_BASE, INT_SSI3 );
+}
+
+void spiISR( uint8_t channel ){         //FIFO got 8 positions, we get notified when it is half full or less
+    uint8_t temp, nib, retVal;          //This will come back every 20 us or 2000 ticks
+    uint32_t status;//,ticks;           //as long as there is data to be sent
+    t_spiTransferState *state = &g_spiState[channel];
+//    ticks = stopTimer();
+    status = ROM_SSIIntStatus(state->baseAdr, true);
+    if( status & SSI_TXFF ){
+        temp = *state->currentByte;
+        while( state->nBytesLeft > 0 ){
+            if( state->doFirstNibbel ){     // Do first nibble
+                nib = (temp & 0xF0) >> 4;   // MSB nibble
+            } else {
+                nib = temp & 0x0F;          // LSB nibble
+            }
+            retVal = ROM_SSIDataPutNonBlocking( state->baseAdr, g_ssi_lut[nib] );
+            if( retVal ){                   //Success
+                if( state->doFirstNibbel ){
+                    state->doFirstNibbel = false;
+                } else {
+                    state->doFirstNibbel = true;
+                    state->currentByte++;
+                    temp = *state->currentByte;
+                    state->nBytesLeft--;
+                }
+            } else {                        //Didn't work. TX FIFO is full!
+//                startTimer();
+                return;                     //Exit the interrupt and continue sending in next one
+            }
+        }
+//        UARTprintf("%22s: %d Ticks between ISRs\n", "spiISR()", ticks);
+        ROM_SSIIntDisable( state->baseAdr, SSI_TXFF );  //Disable FIFO is less than halffull int
+        ROM_SSIIntEnable(  state->baseAdr, SSI_TXEOT ); //ENable end of transmission int.
+        if( !SSIBusy(state->baseAdr) ){                 //Check if finished already
+            ROM_SSIIntDisable( state->baseAdr, SSI_TXEOT );
+            ROM_IntDisable( state->intNo );
+            xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
+            return;
+        }
+        // Wait for SPI to empty the FIFO and trigger the SSI_TXEOT interrupt
+    }
+    if ( (state->nBytesLeft==0) && (status&SSI_TXEOT) ) {
+        // We are finished sending, now we should keep TX low for > 50 us to latch the LEDs
+        // But the SPI hardware does tristate that pin, shall we reconfigure it as gpio and set it low?
+        ROM_SSIIntClear( state->baseAdr, SSI_TXEOT );
+        ROM_SSIIntDisable( state->baseAdr, SSI_TXEOT );
+        ROM_IntDisable( state->intNo );
+        xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
+        return;
+    }
+}
+
+void spiSend( uint8_t channel, uint32_t nBytes ){
+    t_spiTransferState *state = &g_spiState[channel];
+    if( xSemaphoreTake( state->semaToReleaseWhenFinished, 1000 ) ){
+        state->currentByte = g_spiBuffer[channel];
+        state->doFirstNibbel = true;
+        state->nBytesLeft = nBytes;
+//      Enable and Trigger SPI TX buffer empty interrupt
+        ROM_IntEnable( state->intNo );
+        ROM_SSIIntEnable( state->baseAdr, SSI_TXFF );  //Enable FIFO is less than halffull int
+        // It will jump to the ISR and start sending data immediately
+    } else {
+        UARTprintf("%22s: Timeout, could not access sendBuffer %d\n", "spiSend()", channel);
+    }
+}

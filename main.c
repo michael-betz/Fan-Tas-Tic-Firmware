@@ -90,6 +90,7 @@ int main(void) {
 
     configureTimer();   //Init HW timer for measuring processor cycles (%timeit)
     initMyI2C();        //Init the 4 I2C hardware channels
+    spiSetup();         //Init 3 SPI channels for setting ws2811 LEDs
 
     // Enable lazy stacking for interrupt handlers.  This allows floating-point
     // instructions to be used within interrupt handlers, but at the expense of

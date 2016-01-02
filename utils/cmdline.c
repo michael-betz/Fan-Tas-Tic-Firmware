@@ -74,9 +74,10 @@ static char *g_ppcArgv[CMDLINE_MAX_ARGS + 1];
 //
 //*****************************************************************************
 int
-CmdLineProcess(char *pcCmdLine)
+CmdLineProcess(char *pcCmdLine, uint16_t nMax)
 {
     char *pcChar;
+    uint16_t nProc=0;
     uint_fast8_t ui8Argc;
     bool bFindArg = true;
     tCmdLineEntry *psCmdEntry;
@@ -91,8 +92,14 @@ CmdLineProcess(char *pcCmdLine)
     //
     // Advance through the command line until a zero character is found.
     //
-    while(*pcChar)
+    while( *pcChar && nProc<nMax )
     {
+        if(*pcChar=='\n' || *pcChar=='\r'){     //Dirty Hack: append everything after the \n or \r as argv[argc]
+            *pcChar = '\0';
+            g_ppcArgv[ui8Argc] = pcChar + 1;
+            break;
+        }
+
         //
         // If there is a space, then replace it with a zero, and set the flag
         // to search for the next argument.
@@ -142,6 +149,7 @@ CmdLineProcess(char *pcCmdLine)
         // Advance to the next character in the command line.
         //
         pcChar++;
+        nProc++;
     }
 
     //
@@ -168,7 +176,7 @@ CmdLineProcess(char *pcCmdLine)
             //
             if(!strcmp(g_ppcArgv[0], psCmdEntry->pcCmd))
             {
-                return(psCmdEntry->pfnCmd(ui8Argc, g_ppcArgv));
+                return(psCmdEntry->pfnCmd(nMax, ui8Argc, g_ppcArgv));
             }
 
             //

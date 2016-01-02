@@ -76,7 +76,7 @@ extern "C"
 // Command line function callback type.
 //
 //*****************************************************************************
-typedef int (*pfnCmdLine)(int argc, char *argv[]);
+typedef int (*pfnCmdLine)(uint16_t nMax, int argc, char *argv[]);
 
 //*****************************************************************************
 //
@@ -123,7 +123,7 @@ extern tCmdLineEntry g_psCmdTable[];
 // Prototypes for the APIs.
 //
 //*****************************************************************************
-extern int CmdLineProcess(char *pcCmdLine);
+extern int CmdLineProcess(char *pcCmdLine, uint16_t nMax);
 
 //*****************************************************************************
 //
