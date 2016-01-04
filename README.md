@@ -5,7 +5,7 @@ Controller for Pinball machines based on an TM4C123G LaunchPad™ Evaluation Kit
  * 8x8 Switch matrix inputs
  * 12 onboard drivers for solenoids, 4 of them can do hardware PWM (> 100 kHz)
  * 4 x I2C channels for extension boards
- * 2 x SPI channels for running [WS2811 / WS2812 LED strings](http://www.ebay.com/sch/i.html?_from=R40&_trksid=p2050601.m570.l1313.TR0.TRC0.H0.Xled+strand+ws2811.TRS5&_nkw=led+strand+ws2811&_sacat=0)
+ * 3 x SPI channels for running [WS2811 / WS2812 LED strings](http://www.ebay.com/sch/i.html?_from=R40&_trksid=p2050601.m570.l1313.TR0.TRC0.H0.Xled+strand+ws2811.TRS5&_nkw=led+strand+ws2811&_sacat=0) with up to 1024 LEDs per channel
  * In- / Outputs can be easily and cheaply added with [PCF8574](http://www.ti.com/product/pcf8574) I2C GPIO extenders (check eBay for [cheap I/O modules](http://www.ebay.com/sch/i.html?_sacat=0&_nkw=i2c+expander&_frs=1))
  * Super fast USB virtual serial connection to host PC
  * KiCad PCB files available (soon), no tiny SMD components, can be easily assembled by hand
@@ -14,6 +14,7 @@ Controller for Pinball machines based on an TM4C123G LaunchPad™ Evaluation Kit
  * Software can handle up to 320 In- / Outputs
  * All Outputs support 4 bit PWM with > 125 Hz (using [binary code modulation](http://www.batsocks.co.uk/readme/art_bcm_1.htm))
  * All inputs are debounced and read 333 times per second
+ * The timing for the WS2811 LEDs is strictly within spec by using the hardware SPI module.
  * Software easily extendable by running [FreeRTOS](http://www.freertos.org/)
 
 # Digital inputs / outputs
@@ -85,11 +86,13 @@ use the PCF GPIO extenders. To be seen.
         SW?   : Return the state of ALL switches (40 bytes)
         OUT   : OUT hwIndex tPulse PWMhigh PWMlow
         OUT   : OUT hwIndex PWMvalue
-        RUL   : RUL ID IDin IDout trHoldOff tPulse pwmOn pwmOff
-                bPosEdge bAutoOff bLevelTr
+        RUL   : RUL ID IDin IDout trHoldOff tPulse
+                pwmOn pwmOff bPosEdge bAutoOff bLevelTr
         RULE  : Enable  a previously disabled rule: RULE ID
         RULD  : Disable a previously defined rule:  RULD ID
-        LED   : LED <CH>,<led0>,<led1> ...
+        LED   : LED <channel> <nBytes>\n
+                <binary blob of nBytes>
+        I2C   : I2C <channel> <addr> <send data> <nBytesRx>
 
 ## Switch events
 When a switch input flips its state, its hwIndex and new state is immediately reported on the USB serial port
@@ -183,7 +186,19 @@ Setup ruleId 0. Input hwIndex is 0x23, output hwIndex is 0x100. After triggering
    least 4 ms ellapsed), the output is switched off again.
 
 ## `LED` dump data to WS2811 RGB LED strings
-Raw data values are attached to serial command and just sent on one of the channels over the SPI hardware
+There are 3 channels which can address up to 1024 LEDs each. 
+First argument is the channel address (0-2).
+The number of bytes which will be sent (nBytes) must be indicates as the second argument
+and must be an integer multiple of 3.
+Each LED needs to be set with 1 byte per color. For the WS2811 LED chip, the order of the bytes is RGB. 
+For performance reasons, data must be sent as raw binary values (not ascii encoded!).
+
+__Example__
+        
+        LED 1 6\n
+        <0x00, 0xFF, 0x00, 0xFF, 0xFF, 0xFF>
+
+Set the first two LEDs on channel 1. The first LED will glow green, the second white.         
 
 ## `I2C` does a custom I2C transaction
 Not yet implemented. There will be commands to do send / receive of custom bytes to custom addresses. Mutex of I2C hardware!

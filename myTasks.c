@@ -47,6 +47,7 @@
 // Global vars
 t_PCLOutputByte g_outWriterList[OUT_WRITER_LIST_LEN];   // A list to keep track of the state of all output pins
 t_spiTransferState g_spiState[3];
+TaskHandle_t g_customI2cTask = NULL;
 
 const uint16_t g_ssi_lut[16] = {                        // Encodes a 4 bit nibble to a 16 bit SPI word
     0b1000100010001000,     //0                         // The SPI modules sends MSB first!
@@ -80,6 +81,7 @@ tCmdLineEntry g_psCmdTable[] = {
         { "RULE",  Cmd_RULE, ": Enable  a previously disabled rule: RULE <ID>" },
         { "RULD",  Cmd_RULD, ": Disable a previously defined rule:  RULD <ID>" },
         { "LED",   Cmd_LED,  ": LED <channel> <nBytes>\\n<binary blob of nBytes>" },
+        { "I2C",   Cmd_I2C,  ": I2C <channel> <I2Caddr> <sendData> <nBytesRx>" },
         { 0, 0, 0 } };
 
 uint16_t strMyStrip(uint8_t *cmdString, uint16_t cmdLen) {
@@ -631,4 +633,66 @@ void spiSend( uint8_t channel, uint32_t nBytes ){
     } else {
         UARTprintf("%22s: Timeout, could not access sendBuffer %d\n", "spiSend()", channel);
     }
+}
+
+
+uint8_t hexDigitToNibble( uint8_t hexChar ){
+    if( hexChar >= '0' && hexChar <= '9' ){
+        return( hexChar - '0' );
+    } else if ( hexChar >= 'a' && hexChar <= 'f' ){
+        return( hexChar - 'a' );
+    } else if ( hexChar >= 'A' && hexChar <= 'F' ){
+        return( hexChar - 'A' );
+    }
+    return( 0 );
+}
+
+
+
+void taskI2CCustomReporter(void *pvParameters) {
+    // When a custom I2C transaction is finished, report the result to commandline
+    g_customI2cTask = xTaskGetCurrentTaskHandle();
+    UARTprintf("%22s: %s", "taskI2CCustomReporter()", "Started!\n");
+    while( 1 ){
+        if (ulTaskNotifyTake( pdTRUE, portMAX_DELAY)) {    // Wait for i2c transaction to finish
+            //            Report result
+        }
+    }
+    // release the binary semaphore g_semaCustomI2C
+}
+
+void cmdI2CCallback(void* pvCallbackData, uint_fast8_t ui8Status){
+//   This is called from ISR context, so dont do anything here
+//   Notify taskI2CCustomReporter task to report results
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    vTaskNotifyGiveFromISR( g_customI2cTask, &xHigherPriorityTaskWoken );
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+int Cmd_I2C(uint16_t nMax, int argc, char *argv[]) {
+    //I2C <channel> <I2Caddr> <sendData> <nBytesRx>
+    static uint8_t txBuffer[64], rxBuffer[64];
+    uint8_t channel, i2cAddr, *readPointer, *writePointer;
+    uint16_t nBytesRx, nBytesTx, temp;
+    if ( argc == 5 ){
+        channel  = ustrtoul(argv[1], NULL, 0);
+        i2cAddr  = ustrtoul(argv[2], NULL, 0);
+        nBytesRx = ustrtoul(argv[4], NULL, 0);
+        nBytesTx = ustrlen( argv[3] )/2;      //argv[3] string contains hex characters [0FFEDEADBEEF]
+        writePointer = txBuffer;
+        readPointer = (uint8_t*)argv[3];
+        if( nBytesTx > 64 ){
+            UARTprintf("%22s: Too many bytes to send (%d), max. 64\n", "Cmd_I2C()", nBytesTx);
+            return 0;
+        }
+        for( temp=0; temp<nBytesTx; temp++ ){
+            *writePointer  = hexDigitToNibble( *readPointer++ )<<4;
+            *writePointer |= hexDigitToNibble( *readPointer++ );
+            writePointer++;
+        }
+        // Take the binary semaphore g_semaCustomI2C (released after reporting result on USB)
+        ts_i2cTransfer( channel, i2cAddr, txBuffer, nBytesTx, rxBuffer, nBytesRx, cmdI2CCallback, NULL );
+        return 0;
+    }
+    return CMDLINE_TOO_FEW_ARGS;
 }

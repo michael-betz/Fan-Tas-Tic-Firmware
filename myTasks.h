@@ -57,6 +57,7 @@ typedef struct {
 // Global vars
 //*****************************************************************************
 extern TaskHandle_t hUSBCommandParser;
+extern TaskHandle_t g_customI2cTask; //Task to notify once custom i2c command is done
 extern const uint16_t g_ssi_lut[16];
 
 //*****************************************************************************
@@ -74,6 +75,7 @@ extern int Cmd_RUL(uint16_t nMax, int argc, char *argv[]);
 extern int Cmd_RULD(uint16_t nMax, int argc, char *argv[]);
 extern int Cmd_RULE(uint16_t nMax, int argc, char *argv[]);
 extern int Cmd_LED(uint16_t nMax, int argc, char *argv[]);
+extern int Cmd_I2C(uint16_t nMax, int argc, char *argv[]);
 void usbReporter(void *pvParameters);
 void ts_usbSend(uint8_t *data, uint16_t len);
 t_outputBit decodeHwIndex(uint16_t hwIndex);
