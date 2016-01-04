@@ -48,6 +48,11 @@
 t_PCLOutputByte g_outWriterList[OUT_WRITER_LIST_LEN];   // A list to keep track of the state of all output pins
 t_spiTransferState g_spiState[3];
 TaskHandle_t g_customI2cTask = NULL;
+SemaphoreHandle_t g_MutexCustomI2C = NULL;
+uint16_t g_customI2CnBytesRx;
+uint8_t g_customI2CrxBuffer[CUSTOM_I2C_BUF_LEN];
+uint8_t g_customI2Cstate;
+
 
 const uint16_t g_ssi_lut[16] = {                        // Encodes a 4 bit nibble to a 16 bit SPI word
     0b1000100010001000,     //0                         // The SPI modules sends MSB first!
@@ -635,54 +640,84 @@ void spiSend( uint8_t channel, uint32_t nBytes ){
     }
 }
 
-
 uint8_t hexDigitToNibble( uint8_t hexChar ){
     if( hexChar >= '0' && hexChar <= '9' ){
         return( hexChar - '0' );
     } else if ( hexChar >= 'a' && hexChar <= 'f' ){
-        return( hexChar - 'a' );
+        return( hexChar - 'a' + 10 );
     } else if ( hexChar >= 'A' && hexChar <= 'F' ){
-        return( hexChar - 'A' );
+        return( hexChar - 'A' + 10 );
     }
     return( 0 );
 }
 
-
-
 void taskI2CCustomReporter(void *pvParameters) {
     // When a custom I2C transaction is finished, report the result to commandline
+    static uint8_t outBuffer[CUSTOM_I2C_BUF_LEN*2+5];
+    uint8_t *writePointer, *readPointer;
+    uint16_t i;
     g_customI2cTask = xTaskGetCurrentTaskHandle();
-    UARTprintf("%22s: %s", "taskI2CCustomReporter()", "Started!\n");
+    g_MutexCustomI2C = xSemaphoreCreateMutex();
+    UARTprintf("%22s: %s", "taskI2CustomReporter()", "Started!\n");
     while( 1 ){
-        if (ulTaskNotifyTake( pdTRUE, portMAX_DELAY)) {    // Wait for i2c transaction to finish
-            //            Report result
+        if( ulTaskNotifyTake( pdTRUE, portMAX_DELAY) ) {    // Wait for notification of i2c transaction finished
+            writePointer = outBuffer;
+            readPointer = g_customI2CrxBuffer;
+            // Report result
+            writePointer += usprintf( (char*)writePointer, "I2C:" );
+            switch( g_customI2Cstate ){
+            case I2CM_STATUS_SUCCESS:
+                for( i=0; i<g_customI2CnBytesRx; i++ ){
+                    writePointer += usprintf( (char*)writePointer, "%02X", *readPointer++ );
+                }
+            break;
+            case I2CM_STATUS_ADDR_NACK:
+                writePointer += usprintf( (char*)writePointer, "I2CM_STATUS_ADDR_NACK" );
+            break;
+            case I2CM_STATUS_DATA_NACK:
+                writePointer += usprintf( (char*)writePointer, "I2CM_STATUS_DATA_NACK" );
+            break;
+            case I2CM_STATUS_ARB_LOST:
+                writePointer += usprintf( (char*)writePointer, "I2CM_STATUS_ARB_LOST" );
+            break;
+            case I2CM_STATUS_ERROR:
+                writePointer += usprintf( (char*)writePointer, "I2CM_STATUS_ERROR" );
+            break;
+            }
+            writePointer += usprintf( (char*)writePointer, "\n\r" );
+            ts_usbSend( outBuffer, ustrlen((char*)outBuffer) );
+            xSemaphoreGive( g_MutexCustomI2C ); // release the Mutex to allow another custom I2C command
         }
     }
-    // release the binary semaphore g_semaCustomI2C
 }
 
 void cmdI2CCallback(void* pvCallbackData, uint_fast8_t ui8Status){
-//   This is called from ISR context, so dont do anything here
+//   This is called from ISR context, so dont do anything ambitious here
 //   Notify taskI2CCustomReporter task to report results
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    g_customI2Cstate = ui8Status;
     vTaskNotifyGiveFromISR( g_customI2cTask, &xHigherPriorityTaskWoken );
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 int Cmd_I2C(uint16_t nMax, int argc, char *argv[]) {
     //I2C <channel> <I2Caddr> <sendData> <nBytesRx>
-    static uint8_t txBuffer[64], rxBuffer[64];
+    static uint8_t txBuffer[CUSTOM_I2C_BUF_LEN];
     uint8_t channel, i2cAddr, *readPointer, *writePointer;
-    uint16_t nBytesRx, nBytesTx, temp;
+    uint16_t nBytesTx, temp;
     if ( argc == 5 ){
         channel  = ustrtoul(argv[1], NULL, 0);
         i2cAddr  = ustrtoul(argv[2], NULL, 0);
-        nBytesRx = ustrtoul(argv[4], NULL, 0);
+        g_customI2CnBytesRx = ustrtoul(argv[4], NULL, 0);
         nBytesTx = ustrlen( argv[3] )/2;      //argv[3] string contains hex characters [0FFEDEADBEEF]
         writePointer = txBuffer;
         readPointer = (uint8_t*)argv[3];
-        if( nBytesTx > 64 ){
-            UARTprintf("%22s: Too many bytes to send (%d), max. 64\n", "Cmd_I2C()", nBytesTx);
+        if( g_customI2CnBytesRx > CUSTOM_I2C_BUF_LEN ){
+            UARTprintf("%22s: Too many bytes to receive: %d, max. %d\n", "Cmd_I2C()", g_customI2CnBytesRx, CUSTOM_I2C_BUF_LEN);
+            return 0;
+        }
+        if( nBytesTx > CUSTOM_I2C_BUF_LEN ){
+            UARTprintf("%22s: Too many bytes to send: %d, max. %d\n", "Cmd_I2C()", nBytesTx, CUSTOM_I2C_BUF_LEN);
             return 0;
         }
         for( temp=0; temp<nBytesTx; temp++ ){
@@ -691,7 +726,11 @@ int Cmd_I2C(uint16_t nMax, int argc, char *argv[]) {
             writePointer++;
         }
         // Take the binary semaphore g_semaCustomI2C (released after reporting result on USB)
-        ts_i2cTransfer( channel, i2cAddr, txBuffer, nBytesTx, rxBuffer, nBytesRx, cmdI2CCallback, NULL );
+        if( xSemaphoreTake( g_MutexCustomI2C, 3000 ) ){
+            ts_i2cTransfer( channel, i2cAddr, txBuffer, nBytesTx, g_customI2CrxBuffer, g_customI2CnBytesRx, cmdI2CCallback, NULL );
+        } else {
+            UARTprintf("%22s: Timeout, could not acquire custom I2C mutex\n", "Cmd_I2C()");
+        }
         return 0;
     }
     return CMDLINE_TOO_FEW_ARGS;

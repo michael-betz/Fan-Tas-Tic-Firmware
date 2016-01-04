@@ -120,6 +120,9 @@ int main(void) {
     // Create demo tasks
     xTaskCreate(taskDemoLED, (const portCHAR *)"LEDr", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
+    // Report result of custom I2C transaction to commandline
+    xTaskCreate(taskI2CCustomReporter, (const portCHAR *)"I2CcusRep", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+
     // Create USB command parser task
     xTaskCreate(taskUsbCommandParser, (const portCHAR *)"Parser", 256, NULL, 1, &hUSBCommandParser);
 
