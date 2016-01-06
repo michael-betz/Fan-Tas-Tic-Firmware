@@ -10,10 +10,11 @@
 
 #define VERSION_INFO "\nFan-Tas-Tic pinball controller\nFirmware V0.0, M. Betz 01/2016\n"
 
-// System clock rate, 120 MHz
-#define SYSTEM_CLOCK    120000000U
+// System clock rate, 80 MHz
+#define SYSTEM_CLOCK    80000000U
 
 void startTimer();
 uint32_t stopTimer();
+void ledOut( uint8_t ledVal );
 
 #endif /* FAN_TAS_TIC_CONTROLLER_MAIN_H_ */

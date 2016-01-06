@@ -10,18 +10,9 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "driverlib/debug.h"
-#include "drivers/pinout.h"
 #include "inc/hw_memmap.h"
-#include "driverlib/rom.h"
 #include "inc/hw_types.h"
 #include "inc/hw_ints.h"
-#include "driverlib/i2c.h"
-#include "driverlib/ssi.h"
-#include "driverlib/pin_map.h"
-#include "driverlib/gpio.h"
-#include "sensorlib/i2cm_drv.h"
-#include "driverlib/sysctl.h"
 
 // FreeRTOS includes
 #include "FreeRTOSConfig.h"
@@ -31,6 +22,14 @@
 #include "semphr.h"
 
 // TivaWare includes
+#include "driverlib/i2c.h"
+#include "driverlib/ssi.h"
+#include "driverlib/pin_map.h"
+#include "driverlib/gpio.h"
+#include "driverlib/debug.h"
+#include "driverlib/rom.h"
+#include "driverlib/sysctl.h"
+#include "sensorlib/i2cm_drv.h"
 #include "utils/ustdlib.h"
 #include "utils/uartstdio.h"
 #include "utils/cmdline.h"
@@ -109,17 +108,20 @@ void taskDemoLED(void *pvParameters) {
     UARTprintf("%22s: %s", "taskDemoLED()", "Started!\n");
     while (1) {
         // Turn on LED 1
-        LEDWrite(0x0F, 0x01);
-        vTaskDelay(300);
+        ledOut( 1 );
+        vTaskDelay(2);
+        ledOut( 0 );
+        vTaskDelay(1000);
         // Turn on LED 2
-        LEDWrite(0x0F, 0x02);
-        vTaskDelay(300);
-        // Turn on LED 3
-        LEDWrite(0x0F, 0x04);
-        vTaskDelay(300);
-        // Turn on LED 4
-        LEDWrite(0x0F, 0x08);
-        vTaskDelay(300);
+        ledOut( 2 );
+        vTaskDelay(1);
+        ledOut( 0 );
+        vTaskDelay(1000);
+        // Turn on LED 1+2
+        ledOut( 3 );
+        vTaskDelay(1);
+        ledOut( 0 );
+        vTaskDelay(1000);
     }
 }
 
@@ -561,22 +563,22 @@ void spiSetup(){
     ROM_SysCtlPeripheralReset(  SYSCTL_PERIPH_SSI2 );
     ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_SSI3 );
     ROM_SysCtlPeripheralReset(  SYSCTL_PERIPH_SSI3 );
-    // Select the pinout
-    ROM_GPIOPinConfigure( GPIO_PE4_SSI1XDAT0 );
-    ROM_GPIOPinConfigure( GPIO_PD1_SSI2XDAT0 );
-    ROM_GPIOPinConfigure( GPIO_PQ2_SSI3XDAT0 );
-    ROM_GPIOPinTypeSSI(   GPIO_PORTE_BASE, GPIO_PIN_4 );
-    ROM_GPIOPinTypeSSI(   GPIO_PORTD_BASE, GPIO_PIN_1 );
-    ROM_GPIOPinTypeSSI(   GPIO_PORTQ_BASE, GPIO_PIN_2 );
-    // Setup SPI modules
+//    // Select the pinout
+    ROM_GPIOPinConfigure( GPIO_PF1_SSI1TX );     //SSI1
+    ROM_GPIOPinConfigure( GPIO_PB7_SSI2TX );     //SSI2
+    ROM_GPIOPinConfigure( GPIO_PD3_SSI3TX );     //SSI3
+    ROM_GPIOPinTypeSSI(   GPIO_PORTF_BASE, GPIO_PIN_1 );
+    ROM_GPIOPinTypeSSI(   GPIO_PORTB_BASE, GPIO_PIN_7 );
+    ROM_GPIOPinTypeSSI(   GPIO_PORTD_BASE, GPIO_PIN_3 );
+//    // Setup SPI modules
     spiHwSetup( 0, SSI1_BASE, INT_SSI1 );
     spiHwSetup( 1, SSI2_BASE, INT_SSI2 );
     spiHwSetup( 2, SSI3_BASE, INT_SSI3 );
 }
 
 void spiISR( uint8_t channel ){         //FIFO got 8 positions, we get notified when it is half full or less
-    uint8_t temp, nib, retVal;          //This will come back every 20 us or 2000 ticks
-    uint32_t status;//,ticks;           //as long as there is data to be sent
+    uint8_t temp, nib, retVal;          //This will come back every 20 us or 1300 ticks
+    uint32_t status;//,ticks;              //as long as there is data to be sent
     t_spiTransferState *state = &g_spiState[channel];
 //    ticks = stopTimer();
     status = ROM_SSIIntStatus(state->baseAdr, true);
@@ -602,26 +604,14 @@ void spiISR( uint8_t channel ){         //FIFO got 8 positions, we get notified 
 //                startTimer();
                 return;                     //Exit the interrupt and continue sending in next one
             }
-        }
+        }                                   //No more bytes to send!
 //        UARTprintf("%22s: %d Ticks between ISRs\n", "spiISR()", ticks);
-        ROM_SSIIntDisable( state->baseAdr, SSI_TXFF );  //Disable FIFO is less than halffull int
-        ROM_SSIIntEnable(  state->baseAdr, SSI_TXEOT ); //ENable end of transmission int.
-        if( !SSIBusy(state->baseAdr) ){                 //Check if finished already
-            ROM_SSIIntDisable( state->baseAdr, SSI_TXEOT );
+        if( !SSIBusy(state->baseAdr) ){     //Check if SPI TX is finished already
             ROM_IntDisable( state->intNo );
             xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
             return;
         }
         // Wait for SPI to empty the FIFO and trigger the SSI_TXEOT interrupt
-    }
-    if ( (state->nBytesLeft==0) && (status&SSI_TXEOT) ) {
-        // We are finished sending, now we should keep TX low for > 50 us to latch the LEDs
-        // But the SPI hardware does tristate that pin, shall we reconfigure it as gpio and set it low?
-        ROM_SSIIntClear( state->baseAdr, SSI_TXEOT );
-        ROM_SSIIntDisable( state->baseAdr, SSI_TXEOT );
-        ROM_IntDisable( state->intNo );
-        xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
-        return;
     }
 }
 

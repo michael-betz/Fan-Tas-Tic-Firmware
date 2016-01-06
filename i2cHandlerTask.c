@@ -10,7 +10,7 @@
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
 #include "inc/hw_timer.h"
-#include "inc/tm4c1294ncpdt.h"
+#include "inc/hw_ints.h"
 #include "sensorlib/i2cm_drv.h"
 // FreeRTOS includes
 #include "FreeRTOSConfig.h"
@@ -67,54 +67,55 @@ void initMyI2C() {
     //  Set up the i2c masters
     // ***********************************************
     // The I2C7 peripheral must be enabled before use.
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_I2C0);
-    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C0);
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_I2C1);
-    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C1);
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_I2C2);
-    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C2);
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_I2C3);
-    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C3);
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_I2C0 );
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_I2C1 );
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_I2C2 );
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_I2C3 );
 
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOB);   //I2C0
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOG);   //I2C1
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOL);   //I2C2
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOK);   //I2C3
+    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C0 );
+    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C1 );
+    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C2 );
+    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C3 );
+
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOB );   //I2C0
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOA );   //I2C1
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOE );   //I2C2
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOD );   //I2C3
 
     // Configure the pin muxing for I2C0 functions on port D0 and D1.
     // This step is not necessary if your part does not support pin muxing.
-    ROM_GPIOPinConfigure( GPIO_PB2_I2C0SCL);            //I2C0
-    ROM_GPIOPinConfigure( GPIO_PB3_I2C0SDA);
-    ROM_GPIOPinConfigure( GPIO_PG0_I2C1SCL);            //I2C1
-    ROM_GPIOPinConfigure( GPIO_PG1_I2C1SDA);
-    ROM_GPIOPinConfigure( GPIO_PL1_I2C2SCL);            //I2C2
-    ROM_GPIOPinConfigure( GPIO_PL0_I2C2SDA);
-    ROM_GPIOPinConfigure( GPIO_PK4_I2C3SCL);            //I2C3
-    ROM_GPIOPinConfigure( GPIO_PK5_I2C3SDA);
+    ROM_GPIOPinConfigure( GPIO_PB2_I2C0SCL );            //I2C0
+    ROM_GPIOPinConfigure( GPIO_PB3_I2C0SDA );
+    ROM_GPIOPinConfigure( GPIO_PA6_I2C1SCL );            //I2C1
+    ROM_GPIOPinConfigure( GPIO_PA7_I2C1SDA );
+    ROM_GPIOPinConfigure( GPIO_PE4_I2C2SCL );            //I2C2
+    ROM_GPIOPinConfigure( GPIO_PE5_I2C2SDA );
+    ROM_GPIOPinConfigure( GPIO_PD0_I2C3SCL );            //I2C3
+    ROM_GPIOPinConfigure( GPIO_PD1_I2C3SDA );
 
     // Select the I2C function for these pins.  This function will also
     // configure the GPIO pins for I2C operation, setting them to
     // open-drain operation with weak pull-ups.  Consult the data sheet
     // to see which functions are allocated per pin.
     ROM_GPIOPinTypeI2CSCL( GPIO_PORTB_BASE, GPIO_PIN_2); //I2C0
-    ROM_GPIOPinTypeI2C( GPIO_PORTB_BASE, GPIO_PIN_3);
-    ROM_GPIOPinTypeI2CSCL( GPIO_PORTG_BASE, GPIO_PIN_0); //I2C1
-    ROM_GPIOPinTypeI2C( GPIO_PORTG_BASE, GPIO_PIN_1);
-    ROM_GPIOPinTypeI2CSCL( GPIO_PORTL_BASE, GPIO_PIN_1); //I2C2
-    ROM_GPIOPinTypeI2C( GPIO_PORTL_BASE, GPIO_PIN_0);
-    ROM_GPIOPinTypeI2CSCL( GPIO_PORTK_BASE, GPIO_PIN_4); //I2C3
-    ROM_GPIOPinTypeI2C( GPIO_PORTK_BASE, GPIO_PIN_5);
+    ROM_GPIOPinTypeI2C(    GPIO_PORTB_BASE, GPIO_PIN_3);
+    ROM_GPIOPinTypeI2CSCL( GPIO_PORTA_BASE, GPIO_PIN_6); //I2C1
+    ROM_GPIOPinTypeI2C(    GPIO_PORTA_BASE, GPIO_PIN_7);
+    ROM_GPIOPinTypeI2CSCL( GPIO_PORTE_BASE, GPIO_PIN_4); //I2C2
+    ROM_GPIOPinTypeI2C(    GPIO_PORTE_BASE, GPIO_PIN_5);
+    ROM_GPIOPinTypeI2CSCL( GPIO_PORTD_BASE, GPIO_PIN_0); //I2C3
+    ROM_GPIOPinTypeI2C(    GPIO_PORTD_BASE, GPIO_PIN_1);
 
     // Enable weak internal pullups on the SCK pin.
     // Also disabes open drain so remove this once external pullups are in place
     GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_2, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C0
     GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_3, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
-    GPIOPadConfigSet( GPIO_PORTG_BASE, GPIO_PIN_0, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C1
-    GPIOPadConfigSet( GPIO_PORTG_BASE, GPIO_PIN_1, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
-    GPIOPadConfigSet( GPIO_PORTL_BASE, GPIO_PIN_1, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C2
-    GPIOPadConfigSet( GPIO_PORTL_BASE, GPIO_PIN_0, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
-    GPIOPadConfigSet( GPIO_PORTK_BASE, GPIO_PIN_4, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C3
-    GPIOPadConfigSet( GPIO_PORTK_BASE, GPIO_PIN_5, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
+    GPIOPadConfigSet( GPIO_PORTA_BASE, GPIO_PIN_6, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C1
+    GPIOPadConfigSet( GPIO_PORTA_BASE, GPIO_PIN_7, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
+    GPIOPadConfigSet( GPIO_PORTE_BASE, GPIO_PIN_4, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C2
+    GPIOPadConfigSet( GPIO_PORTE_BASE, GPIO_PIN_5, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
+    GPIOPadConfigSet( GPIO_PORTD_BASE, GPIO_PIN_0, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C3
+    GPIOPadConfigSet( GPIO_PORTD_BASE, GPIO_PIN_1, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
 
 // Enable loopbakc mode (without pullups and without loopback the driver will hang! :( )
 //    I2C0_MCR_R |= 0x01;

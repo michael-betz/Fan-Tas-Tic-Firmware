@@ -1,8 +1,8 @@
 /******************************************************************************
  *
- * Default Linker Command file for the Texas Instruments TM4C1294NCPDT
+ * Default Linker Command file for the Texas Instruments TM4C123GH6PM
  *
- * This is derived from revision 12770 of the TivaWare Library.
+ * This is derived from revision 15071 of the TivaWare Library.
  *
  *****************************************************************************/
 
@@ -10,8 +10,8 @@
 
 MEMORY
 {
-    FLASH (RX) : origin = 0x00000000, length = 0x00100000
-    SRAM (RWX) : origin = 0x20000000, length = 0x00040000
+    FLASH (RX) : origin = 0x00000000, length = 0x00040000
+    SRAM (RWX) : origin = 0x20000000, length = 0x00008000
 }
 
 /* The following command line options are set as part of the CCS project.    */
