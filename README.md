@@ -208,7 +208,7 @@ Sent:
 
 Set the first two LEDs on channel 1. The first LED will glow white at full power, the second red at half power.
 
-## `I2C` does a custom I2C transaction
+## `I2C` do a custom I2C transaction
 This command does a send / receive transaction on one of the I2C busses. Use this to communicate with custom extension boards from python.
 
 __Example__
