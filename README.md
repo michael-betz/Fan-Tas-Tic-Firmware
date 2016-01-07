@@ -4,16 +4,17 @@ Controller for Pinball machines based on an TM4C123G LaunchPad™ Evaluation Kit
 ## Hardware features
  * 8x8 Switch matrix inputs
  * 12 onboard drivers for solenoids, 4 of them can do hardware PWM (> 100 kHz)
- * 4 x I2C channels for extension boards
+ * 4 x I2C channels for extension boards (solenoid drivers, switch inputs, LED drivers, servo drivers, ...)
  * 3 x SPI channels for running [WS2811 / WS2812 LED strings](http://www.ebay.com/sch/i.html?_from=R40&_trksid=p2050601.m570.l1313.TR0.TRC0.H0.Xled+strand+ws2811.TRS5&_nkw=led+strand+ws2811&_sacat=0) with up to 1024 LEDs per channel
  * In- / Outputs can be easily and cheaply added with [PCF8574](http://www.ti.com/product/pcf8574) I2C GPIO extenders (check eBay for [cheap I/O modules](http://www.ebay.com/sch/i.html?_sacat=0&_nkw=i2c+expander&_frs=1))
  * Super fast USB virtual serial connection to host PC
- * KiCad PCB files available (soon), no tiny SMD components, can be easily assembled by hand
+ * KiCad PCB files available, no tiny SMD components, can be assembled by hand
 
 ## Software features 
- * Software can handle up to 320 In- / Outputs
+ * Software can handle up to 320 channels which can be used as In- or Outputs
+ * All In- / Outputs are identified by a 16 bit unique ID. No configuration necessary.
  * All Outputs support 4 bit PWM with > 125 Hz (using [binary code modulation](http://www.batsocks.co.uk/readme/art_bcm_1.htm))
- * All inputs are debounced and read 333 times per second
+ * All inputs are debounced and read 333 times per second. A switch toggles after keeping its state for 4 ticks (12 ms).
  * The timing for the WS2811 LEDs is strictly within spec by using the hardware SPI module.
  * Software easily extendable by running [FreeRTOS](http://www.freertos.org/)
 
@@ -34,12 +35,12 @@ Reading an empty address will give a NO_ACK read error, which will be silently i
 
 The taskDebouncer() is running with 333 Hz, reading all switches (matrix and I2C) into an array
  * Switch Matrix (SM) is read in foreground while I2C transactions happen in background (TI I2Cm driver)
- * When both reads are finished, start the Debouncing routine
- * If a bit changes, it increments a 2 bit [vertical counter](http://www.compuphase.com/electronics/debouncing.htm).
-   The ARM CPU can process 32 bit in a single instruction, which speeds things up a lot!
+ * When both reads are finished, the Debouncing routine is called
+ * If a changed input bit was detected, it increments a 2 bit [vertical counter](http://www.compuphase.com/electronics/debouncing.htm).
+   The ARM CPU can process 32 input bits in a single instruction, which speeds things up!
  * If the change persists for 4 read cycles, the vertical counter of that bit will overflow and trigger a definite change.
  * The current debounced state and any bits which toggled during the current iteration are stored in global variables.
- * The serial reporter function looks for changed bits, encodes them and reports them on the serial port
+ * The serial reporter function looks for changed bits, encodes them and reports them as `Switch Events` on the serial port
  * The quick-fire rule function checks a list of rules, which can be triggered by changed bits, which can lead to immediate actions, like coils firing.
 
 ## `hwIndex` identifies an input / output pin
@@ -103,7 +104,7 @@ The input with hwIndex 0x0F8 changed to 1, 0x0FC changed to 0 and 0x0FE changed 
  
 Received:
 
-        SE:0f8=1 0fa=1 0fc=0 0fe=1
+        SE:0f8=1 0fa=1 0fc=0 0fe=1\n
 
 ## `SW?` returns the state of all Switch inputs
 Returns 40 bytes as 8 digit hex numbers. This encodes all 320 bits which can be addressed by a hwIndex.
@@ -112,10 +113,10 @@ __Example__
 
 Sent:
 
-        SW?
+        SW?\n
 Received:
 
-        SW:00000000 12345678 9ABCDEF0 AFFE0000 DEAD0000 BEEF0000 C0FFEE00 00000000 00000000 00000000
+        SW:00000000123456789ABCDEF0AFFE0000DEAD0000BEEF0000C0FFEE00000000000000000000000000\n
 
 ## `OUT` set a solenoid driver output
  * hwIndex 
@@ -127,11 +128,15 @@ __Example__
 
 Set output pin with hwIndex 0x100 to a pwm power level of 10 and keep it there.
 
-        OUT 0x100 10
+Sent:
+
+        OUT 0x100 10\n
 
 Pulse output with hwIndex 0x110 for 300 ms with a pwm power level of 10 and then keep it at a power level of 2.
 
-        OUT 0x110 2 300 10
+Sent:
+
+        OUT 0x110 2 300 10\n
 
  
 ## `RUL` setup and enable a quick-fire rule
@@ -178,7 +183,9 @@ Sending trigger events every `triggerHoldOffTime` as long as the level is there 
 
 __Example__
 
-        RUL 0 0x23 0x100 4 1 15 3 1 1 0
+Sent:
+
+        RUL 0 0x23 0x100 4 1 15 3 1 1 0\n
     
 Setup ruleId 0. Input hwIndex is 0x23, output hwIndex is 0x100. After triggering, at least 4 ms need to ellapse
  before the trigger becomes armed again. Once triggered it pulses the output for 1 ms with pwmPower 15, then it
@@ -188,18 +195,31 @@ Setup ruleId 0. Input hwIndex is 0x23, output hwIndex is 0x100. After triggering
 ## `LED` dump data to WS2811 RGB LED strings
 There are 3 channels which can address up to 1024 LEDs each. 
 First argument is the channel address (0-2).
-The number of bytes which will be sent (nBytes) must be indicates as the second argument
-and must be an integer multiple of 3.
+Second argument is the number of bytes which will be sent (nBytes) and must be an integer multiple of 3.
 Each LED needs to be set with 1 byte per color. For the WS2811 LED chip, the order of the bytes is RGB. 
 For performance reasons, data must be sent as raw binary values (not ascii encoded!).
 
 __Example__
-        
-        LED 1 6\n
-        <0x00, 0xFF, 0x00, 0xFF, 0xFF, 0xFF>
 
-Set the first two LEDs on channel 1. The first LED will glow green, the second white.         
+Sent:
+
+        LED 1 6\n
+        \xFF\xFF\xFF\x7F\x00\x00
+
+Set the first two LEDs on channel 1. The first LED will glow white at full power, the second red at half power.
 
 ## `I2C` does a custom I2C transaction
-Not yet implemented. There will be commands to do send / receive of custom bytes to custom addresses. Mutex of I2C hardware!
+This command does a send / receive transaction on one of the I2C busses. Use this to communicate with custom extension boards from python.
+
+__Example__
+
+Sent:
+
+         I2C 3 0x20 0xABCDEF 2\n
+
+Received:
+
+         I2C:E3B4\n
+
+Do an I2C transaction on channel 3. The right shifted device address (without R/W bit) is 0x20. Send the 3 bytes of data 0xAB, 0xCD, 0xEF. Then read 2 bytes of data from the device, which are 0xE3 and 0xB4.
 
