@@ -219,7 +219,7 @@ Sent:
 
 Received:
 
-         I2C:E3B4\n
+         I2:E3B4\n
 
 Do an I2C transaction on channel 3. The right shifted device address (without R/W bit) is 0x20. Send the 3 bytes of data 0xAB, 0xCD, 0xEF. Then read 2 bytes of data from the device, which are 0xE3 and 0xB4.
 
