@@ -76,7 +76,7 @@ extern "C"
 // Command line function callback type.
 //
 //*****************************************************************************
-typedef int (*pfnCmdLine)(uint16_t nMax, int argc, char *argv[]);
+typedef int (*pfnCmdLine)(int argc, char *argv[]);
 
 //*****************************************************************************
 //

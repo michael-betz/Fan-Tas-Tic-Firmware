@@ -125,42 +125,78 @@ void taskDemoLED(void *pvParameters) {
     }
 }
 
+void cmdParse( uint8_t *charBuffer, uint16_t nCharsRead ){
+    uint8_t retVal = CmdLineProcess( (char*)charBuffer, nCharsRead );
+    switch (retVal) {
+     case CMDLINE_BAD_CMD:
+         UARTprintf("[CMDLINE_BAD_CMD] %s\n", charBuffer);
+         break;
+     case CMDLINE_INVALID_ARG:
+         UARTprintf("[CMDLINE_INVALID_ARG] %s\n", charBuffer);
+         break;
+     case CMDLINE_TOO_FEW_ARGS:
+         UARTprintf("[CMDLINE_TOO_FEW_ARGS] %s\n", charBuffer);
+         break;
+     case CMDLINE_TOO_MANY_ARGS:
+         UARTprintf("[CMDLINE_TOO_MANY_ARGS] %s\n", charBuffer);
+         break;
+    }
+}
+
+int16_t eolSearch( uint8_t *charPointer, uint16_t nChars ){
+//  Return -1 if no eol has been found, otherwise return offset to eol
+    uint16_t i;
+    for( i=0; i<nChars; i++ ){          // Find the end of line in received chars
+        if( *charPointer=='\n' || *charPointer=='\r' || *charPointer=='\0' ){
+            return i;
+        }
+        charPointer++;
+    }
+    return -1;
+}
+
 void taskUsbCommandParser( void *pvParameters ) {
     // Read data from USB serial and parse it
     UARTprintf("%22s: %s", "taskUsbCommandParser()", "Started!\n");
     static uint8_t charBuffer[CMD_PARSER_BUF_LEN];
 //    uint32_t minStackSpace;
     uint32_t nCharsRead=0, tempCharsRead;
-    int retVal;
+    int16_t retVal;
     uint8_t *writePointer = charBuffer;
     while (1) {
         if (ulTaskNotifyTake( pdTRUE, portMAX_DELAY)) {    // Wait for receiving new serial data over USB
             while ( USBBufferDataAvailable(&g_sRxBuffer) ) {
                 tempCharsRead = USBBufferRead(&g_sRxBuffer, writePointer, CMD_PARSER_BUF_LEN-nCharsRead-1 );
-                writePointer += tempCharsRead-1;           //Points to last character now
-                nCharsRead += tempCharsRead;
-                if( nCharsRead>=(CMD_PARSER_BUF_LEN-1) || *writePointer=='\n' || *writePointer=='\r' || *writePointer=='\0' ){
-                    retVal = CmdLineProcess( (char*)charBuffer, nCharsRead );
-                    switch (retVal) {
-                     case CMDLINE_BAD_CMD:
-                         UARTprintf("[CMDLINE_BAD_CMD] %s\n", charBuffer);
-                         break;
-                     case CMDLINE_INVALID_ARG:
-                         UARTprintf("[CMDLINE_INVALID_ARG] %s\n", charBuffer);
-                         break;
-                     case CMDLINE_TOO_FEW_ARGS:
-                         UARTprintf("[CMDLINE_TOO_FEW_ARGS] %s\n", charBuffer);
-                         break;
-                     case CMDLINE_TOO_MANY_ARGS:
-                         UARTprintf("[CMDLINE_TOO_MANY_ARGS] %s\n", charBuffer);
-                         break;
+                do {                                        //While there's chars to check (can also be the remainder)
+                    // if binaryReceiveMode
+                    //      call binaryCallback with current data buffer. It returns the accepted bytes
+                    //      if accepted bytes < data buffer length:
+                    //          switch back to Ascii-line mode
+                    //          set data buffer length - accepted bytes as remainder
+                    //      else
+                    //          keep binaryReceiveMode
+                    // else, do the stuff below
+                    retVal = eolSearch( writePointer, tempCharsRead );
+                    if( retVal > -1 ){                      //EOL found
+                        cmdParse( charBuffer, nCharsRead + retVal );    //Parse command (without EOL)
+                        // cmdParse enables binaryReceiveMode
+                        nCharsRead = 0;
+                        writePointer += retVal+1;           //Points to the first remainder after the found EOL char
+                        tempCharsRead -= retVal+1;          //Length of the remainder
+                        memcpy( charBuffer, writePointer, tempCharsRead );//Remainder is now in the beginning
+                        writePointer = charBuffer;
+                    } else {                                //No EOL found, keep collecting chars from USB
+                        nCharsRead += tempCharsRead;
+                        if( nCharsRead >= CMD_PARSER_BUF_LEN - 1 ){
+                            UARTprintf("%22s: %s", "taskUsbCommandParser()", "Command buffer overflow, try a shorter command!\n");
+                            writePointer = charBuffer;
+                            nCharsRead = 0;
+                        } else {                            //We still have space!
+                            writePointer += tempCharsRead;
+                        }
+                        break;                              //Wait for next char
                     }
-                    nCharsRead = 0;
-                    writePointer = charBuffer;
-                } else {
-                    writePointer++;                     //Points to first free position in charBuffer now
-                }
-                ASSERT(nCharsRead < CMD_PARSER_BUF_LEN);// Check for buffer overflow due to too long command
+                } while( tempCharsRead > 0 );
             }
 //            minStackSpace = uxTaskGetStackHighWaterMark( NULL );
 //            UARTprintf("taskUsbCommandParser(): Min Stack Space = %d words\n", minStackSpace);
@@ -333,7 +369,7 @@ t_outputBit decodeHwIndex(uint16_t hwIndex) {
 }
 
 // This function implements the "help" command.  It prints a simple list of the available commands with a brief description.
-int Cmd_help(uint16_t nMax, int argc, char *argv[]) {
+int Cmd_help(int argc, char *argv[]) {
     tCmdLineEntry *pEntry;
     UARTprintf("\nAvailable commands\n");
     UARTprintf("------------------\n");
@@ -347,12 +383,14 @@ int Cmd_help(uint16_t nMax, int argc, char *argv[]) {
     return (0);                                                // Return success.
 }
 
-int Cmd_IDN(uint16_t nMax, int argc, char *argv[]) {
-    UARTprintf( VERSION_INFO);
+int Cmd_IDN(int argc, char *argv[]) {
+    const uint8_t buff[] = VERSION_IDN;
+    ts_usbSend( (uint8_t*)buff, VERSION_IDN_LEN );
+    UARTprintf( VERSION_INFO );
     return (0);
 }
 
-int Cmd_SW(uint16_t nMax, int argc, char *argv[]) {
+int Cmd_SW(int argc, char *argv[]) {
     // Report state of all switches
     static char outBuffer[REPORT_SWITCH_BUF_SIZE];
     uint16_t charsWritten = 3;
@@ -360,7 +398,7 @@ int Cmd_SW(uint16_t nMax, int argc, char *argv[]) {
     ustrncpy(outBuffer, "SW:", REPORT_SWITCH_BUF_SIZE); //SW = Hex coded switch state
     for (i = 0; i < N_LONGS; i++) {
         charsWritten += usnprintf(&outBuffer[charsWritten],
-                REPORT_SWITCH_BUF_SIZE - charsWritten, "%08x ",
+                REPORT_SWITCH_BUF_SIZE - charsWritten, "%08x",
                 g_SwitchStateDebounced.longValues[i]);
         if (charsWritten >= REPORT_SWITCH_BUF_SIZE - 10) {
             UARTprintf("Cmd_SW(): string buffer overflow!\n");
@@ -373,7 +411,7 @@ int Cmd_SW(uint16_t nMax, int argc, char *argv[]) {
     return (0);
 }
 
-int Cmd_OUT(uint16_t nMax, int argc, char *argv[]) {
+int Cmd_OUT(int argc, char *argv[]) {
 //    OUT <hwIndex> <PWMlow> <tPulse> <PWMhigh>   or OUT <hwIndex> <PWMvalue>
 //    OUT 0x0FE 1 1500 15
 //    OUT 0x0FE 2
@@ -414,7 +452,7 @@ int Cmd_OUT(uint16_t nMax, int argc, char *argv[]) {
     return ( CMDLINE_TOO_FEW_ARGS);
 }
 
-int Cmd_RULE(uint16_t nMax, int argc, char *argv[]) {
+int Cmd_RULE(int argc, char *argv[]) {
     //Enable a quickfire rule
     uint8_t id;
     if (argc == 2) {
@@ -430,7 +468,7 @@ int Cmd_RULE(uint16_t nMax, int argc, char *argv[]) {
     return CMDLINE_TOO_FEW_ARGS;
 }
 
-int Cmd_RULD(uint16_t nMax, int argc, char *argv[]) {
+int Cmd_RULD(int argc, char *argv[]) {
     //Disable a quickfire rule
     uint8_t id;
     if (argc == 2) {
@@ -446,7 +484,7 @@ int Cmd_RULD(uint16_t nMax, int argc, char *argv[]) {
     return CMDLINE_TOO_FEW_ARGS;
 }
 
-int Cmd_RUL(uint16_t nMax, int argc, char *argv[]) {
+int Cmd_RUL(int argc, char *argv[]) {
 // Configure and activate a Quick-fire rule:
 //  * quickRuleId (0-64)
 //  * input switch ID number
@@ -510,30 +548,36 @@ int Cmd_RUL(uint16_t nMax, int argc, char *argv[]) {
 
 uint8_t g_spiBuffer[3][N_LEDS_MAX*3];   //3 channels * 3 colors --> 9.2 kByte
 
-int Cmd_LED(uint16_t nMax, int argc, char *argv[]) {    //nMax = number of all received characters so far
+typedef struct{
+    uint32_t nBytesToRead;
+    uint8_t *writePointer;
+    void (*callbackWhenFinished)(void);
+}t_serialBinaryCallback;
+
+t_serialBinaryCallback g_serialCallback;
+
+void Cmd_LED_done(){
+    spi
+}
+
+int Cmd_LED(int argc, char *argv[]) {   //Here we need to switch the serialCommandParser to Binary mode
     //LED 0 128\nxxxxxx
-    uint8_t channel, *pWrite, *pRead;
-    uint32_t blobSize, blobReceived, tempReceived;
+    uint8_t channel;
+    uint32_t blobSize;
     if( argc==3 ){
         channel = ustrtoul(argv[1], NULL, 0);
-        if(  channel <= 2 ){
+        if( channel <= 2 ){
             blobSize = ustrtoul(argv[2], NULL, 0);
-            if( blobSize%3 ){
+            if( blobSize%3 || blobSize>N_LEDS_MAX*3 ){
                 UARTprintf("%22s: Invalid number of bytes (%d)\n", "Cmd_LED()", blobSize);
                 return 0;
             }
-            blobReceived = nMax - ustrlen(argv[0]) - ustrlen(argv[1]) - ustrlen(argv[2]) - 3;
-            pWrite = (uint8_t*)&g_spiBuffer[channel];
-            pRead = (uint8_t*)argv[3];
-            memcpy( pWrite, pRead, blobReceived );
-            pWrite += blobReceived;
-            while( blobReceived < blobSize ){
-                tempReceived = USBBufferRead( &g_sRxBuffer, pWrite, blobSize-blobReceived );
-                pWrite += tempReceived;
-                blobReceived += tempReceived;
-            }
-            UARTprintf("Blasting %d bytes of data to LED string on channel %d\n", blobSize, channel);
-            spiSend( channel, blobSize );
+//            UARTprintf("Blasting %d bytes of data to LED string on channel %d\n", blobSize, channel);
+            g_serialCallback.nBytesToRead = blobSize;
+            g_serialCallback.writePointer = g_spiBuffer[channel];
+            g_serialCallback.callbackWhenFinished = Cmd_LED_done;
+        } else {
+            UARTprintf("%22s: Invalid LED channel (%d)\n", "Cmd_LED()", channel);
         }
     } else {
         UARTprintf("%22s: Invalid number of arguments (%d)\n", "Cmd_LED()", argc);
@@ -690,7 +734,7 @@ void cmdI2CCallback(void* pvCallbackData, uint_fast8_t ui8Status){
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-int Cmd_I2C(uint16_t nMax, int argc, char *argv[]) {
+int Cmd_I2C(int argc, char *argv[]) {
     //I2C <channel> <I2Caddr> <sendData> <nBytesRx>
     static uint8_t txBuffer[CUSTOM_I2C_BUF_LEN];
     uint8_t channel, i2cAddr, *readPointer, *writePointer;

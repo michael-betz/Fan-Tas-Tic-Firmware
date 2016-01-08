@@ -31,7 +31,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <string.h>
+#include "utils/ustdlib.h"
 #include "utils/cmdline.h"
 
 //*****************************************************************************
@@ -94,11 +94,6 @@ CmdLineProcess(char *pcCmdLine, uint16_t nMax)
     //
     while( *pcChar && nProc<nMax )
     {
-        if(*pcChar=='\n' || *pcChar=='\r'){     //Dirty Hack: append everything after the \n or \r as argv[argc]
-            *pcChar = '\0';
-            g_ppcArgv[ui8Argc] = pcChar + 1;
-            break;
-        }
 
         //
         // If there is a space, then replace it with a zero, and set the flag
@@ -174,9 +169,9 @@ CmdLineProcess(char *pcCmdLine, uint16_t nMax)
             // the function for this command, passing the command line
             // arguments.
             //
-            if(!strcmp(g_ppcArgv[0], psCmdEntry->pcCmd))
+            if(!ustrncmp(g_ppcArgv[0], psCmdEntry->pcCmd, nMax))
             {
-                return(psCmdEntry->pfnCmd(nMax, ui8Argc, g_ppcArgv));
+                return(psCmdEntry->pfnCmd(ui8Argc, g_ppcArgv));
             }
 
             //
