@@ -52,8 +52,11 @@ TaskHandle_t hUSBCommandParser = NULL;
 // To see how fast crtical parts of the code can run
 //-------------------------------------------------------------------------
 void configureTimer() {
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1); 	    // Enable Timer 1 Clock
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1);        // Enable Timer 1 Clock
+    ROM_SysCtlPeripheralReset(SYSCTL_PERIPH_TIMER1);
     ROM_TimerConfigure(TIMER1_BASE, TIMER_CFG_ONE_SHOT_UP); // Configure Timer Operation as one shot up counting
+//    ROM_TimerConfigure(TIMER1_BASE, TIMER_CFG_PERIODIC_UP ); // For freertos stats
+    ROM_TimerEnable(TIMER1_BASE, TIMER_A);                   // Start Timer 1A
 }
 void startTimer() {
     ROM_TimerEnable(TIMER1_BASE, TIMER_A); // Start Timer 1A
@@ -66,6 +69,20 @@ uint32_t stopTimer() {
     ROM_TimerLoadSet(TIMER1_BASE, TIMER_A, 0xFFFFFFFF);
     HWREG(TIMER1_BASE + TIMER_O_TAV) = 0;
     return (timerValue);
+}
+uint32_t getTimer(){
+    static uint32_t timerValue=0;
+    timerValue += stopTimer()>>8;
+    startTimer();
+    return timerValue;
+}
+
+void vApplicationStackOverflowHook( TaskHandle_t xTask, char *pcTaskName ){
+    while(1);
+}
+
+void vApplicationMallocFailedHook( void ){
+    while(1);
 }
 
 void ledOut( uint8_t ledVal ){
@@ -114,7 +131,7 @@ int main(void) {
             " Hi, here's the brain of Fan-Tas-Tic Pinball V0.0 \n"
             "**************************************************\n\n");
 
-    configureTimer();   //Init HW timer for measuring processor cycles (%timeit)
+//    configureTimer();   //Init HW timer for measuring processor cycles (%timeit)
     initMyI2C();        //Init the 4 I2C hardware channels
     spiSetup();         //Init 3 SPI channels for setting ws2811 LEDs
 
@@ -141,13 +158,13 @@ int main(void) {
     // Startup the FreeRTOS scheduler
     //-------------------------------------------------------------------------
     // Create demo tasks
-    xTaskCreate(taskDemoLED, (const portCHAR *)"LEDr", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(taskDemoLED, (const portCHAR *)"LEDr", 64, NULL, 1, NULL);
 
     // Report result of custom I2C transaction to commandline
     xTaskCreate(taskI2CCustomReporter, (const portCHAR *)"I2CcusRep", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
     // Create USB command parser task
-    xTaskCreate(taskUsbCommandParser, (const portCHAR *)"Parser", 256, NULL, 1, &hUSBCommandParser);
+    xTaskCreate(taskUsbCommandParser, (const portCHAR *)"Parser", 256, NULL, 2, &hUSBCommandParser);
 
     // Create I2C / Matrix debouncer
     xTaskCreate(taskDebouncer, (const portCHAR *)"Debouncer", 256, NULL, 1, NULL);

@@ -407,7 +407,7 @@ void taskDebouncer(void *pvParameters) {
     for (i = 0; i < MAX_QUICK_RULES; i++) {
         disableQuickRule(i);
     }
-    vTaskDelay(1000);
+    vTaskDelay( 250 );
     i2cStartPCFL8574refresh();
     xLastWakeTime = xTaskGetTickCount();
     while (1) {
@@ -420,7 +420,7 @@ void taskDebouncer(void *pvParameters) {
 //            ticks = stopTimer();
 //            UARTprintf("readSwitchMatrix() %d ticks\n", ticks );
             //Run every 3 ms (333 Hz) --> 12 ms debounce latency
-            vTaskDelayUntil(&xLastWakeTime, 3);
+            vTaskDelayUntil(&xLastWakeTime, 10);
 //            startTimer();
             //Start background I2C scanner (takes ~ 600 us)
             i2cStartPCFL8574refresh();

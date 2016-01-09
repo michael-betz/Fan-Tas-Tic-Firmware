@@ -105,6 +105,7 @@ uint16_t strMyStrip(uint8_t *cmdString, uint16_t cmdLen) {
 
 void taskDemoLED(void *pvParameters) {
 // Flash the LEDs on the launchpad
+//    static char debugBuffer[256];
     UARTprintf("%22s: %s", "taskDemoLED()", "Started!\n");
     while (1) {
         // Turn on LED 1
@@ -122,11 +123,13 @@ void taskDemoLED(void *pvParameters) {
         vTaskDelay(1);
         ledOut( 0 );
         vTaskDelay(1000);
+//        vTaskGetRunTimeStats( debugBuffer );
+//        UARTprintf( "\033[2J%s", debugBuffer );
     }
 }
 
-void cmdParse( uint8_t *charBuffer, uint16_t nCharsRead ){
-    uint8_t retVal = CmdLineProcess( (char*)charBuffer, nCharsRead );
+int8_t cmdParse( uint8_t *charBuffer, uint16_t nCharsRead ){
+    int8_t retVal = CmdLineProcess( (char*)charBuffer, nCharsRead );
     switch (retVal) {
      case CMDLINE_BAD_CMD:
          UARTprintf("[CMDLINE_BAD_CMD] %s\n", charBuffer);
@@ -141,6 +144,7 @@ void cmdParse( uint8_t *charBuffer, uint16_t nCharsRead ){
          UARTprintf("[CMDLINE_TOO_MANY_ARGS] %s\n", charBuffer);
          break;
     }
+    return retVal;
 }
 
 int16_t eolSearch( uint8_t *charPointer, uint16_t nChars ){
@@ -148,6 +152,7 @@ int16_t eolSearch( uint8_t *charPointer, uint16_t nChars ){
     uint16_t i;
     for( i=0; i<nChars; i++ ){          // Find the end of line in received chars
         if( *charPointer=='\n' || *charPointer=='\r' || *charPointer=='\0' ){
+            *charPointer = '\0';        //Replace EOL with \0
             return i;
         }
         charPointer++;
@@ -155,51 +160,116 @@ int16_t eolSearch( uint8_t *charPointer, uint16_t nChars ){
     return -1;
 }
 
+uint32_t min( uint32_t a, uint32_t b ){
+    if( b < a ){
+        return b;
+    }
+    return a;
+}
+
+typedef enum{
+    PARS_MODE_ASCII, PARS_MODE_BIN_LED
+}t_usbParserMode;
+
 void taskUsbCommandParser( void *pvParameters ) {
     // Read data from USB serial and parse it
     UARTprintf("%22s: %s", "taskUsbCommandParser()", "Started!\n");
     static uint8_t charBuffer[CMD_PARSER_BUF_LEN];
 //    uint32_t minStackSpace;
-    uint32_t nCharsRead=0, tempCharsRead;
+    uint32_t nCharsRead=0, tempCharsRead=0, remainderSize=0;
     int16_t retVal;
-    uint8_t *writePointer = charBuffer;
+    uint8_t *writePointer = charBuffer;                         // Points to first free place in charBuffer
+    uint8_t *readPointer = charBuffer;                          // Points to the next unprocessed character
+    uint8_t *spiWritePointer;                                   // Points to first free place in spiBuffer
+    t_usbParserMode currentMode = PARS_MODE_ASCII;
     while (1) {
-        if (ulTaskNotifyTake( pdTRUE, portMAX_DELAY)) {    // Wait for receiving new serial data over USB
-            while ( USBBufferDataAvailable(&g_sRxBuffer) ) {
+        switch( currentMode ){
+        case PARS_MODE_ASCII:
+            // -----------------------------------------------------------
+            //  Check if there is any data in the buffer to process
+            // -----------------------------------------------------------
+            if( remainderSize == 0 ){                           // There's no unprocessed data in the buffer
+                while( !USBBufferDataAvailable(&g_sRxBuffer) ){
+                    ulTaskNotifyTake( pdTRUE, portMAX_DELAY);   // Wait for receiving new serial data over USB
+                }                                               // Here we must have new data in any case
                 tempCharsRead = USBBufferRead(&g_sRxBuffer, writePointer, CMD_PARSER_BUF_LEN-nCharsRead-1 );
-                do {                                        //While there's chars to check (can also be the remainder)
-                    // if binaryReceiveMode
-                    //      call binaryCallback with current data buffer. It returns the accepted bytes
-                    //      if accepted bytes < data buffer length:
-                    //          switch back to Ascii-line mode
-                    //          set data buffer length - accepted bytes as remainder
-                    //      else
-                    //          keep binaryReceiveMode
-                    // else, do the stuff below
-                    retVal = eolSearch( writePointer, tempCharsRead );
-                    if( retVal > -1 ){                      //EOL found
-                        cmdParse( charBuffer, nCharsRead + retVal );    //Parse command (without EOL)
-                        // cmdParse enables binaryReceiveMode
-                        nCharsRead = 0;
-                        writePointer += retVal+1;           //Points to the first remainder after the found EOL char
-                        tempCharsRead -= retVal+1;          //Length of the remainder
-                        memcpy( charBuffer, writePointer, tempCharsRead );//Remainder is now in the beginning
-                        writePointer = charBuffer;
-                    } else {                                //No EOL found, keep collecting chars from USB
-                        nCharsRead += tempCharsRead;
-                        if( nCharsRead >= CMD_PARSER_BUF_LEN - 1 ){
-                            UARTprintf("%22s: %s", "taskUsbCommandParser()", "Command buffer overflow, try a shorter command!\n");
-                            writePointer = charBuffer;
-                            nCharsRead = 0;
-                        } else {                            //We still have space!
-                            writePointer += tempCharsRead;
-                        }
-                        break;                              //Wait for next char
-                    }
-                } while( tempCharsRead > 0 );
+                writePointer += tempCharsRead;
+                remainderSize += tempCharsRead;                 // How many chars to process
             }
-//            minStackSpace = uxTaskGetStackHighWaterMark( NULL );
-//            UARTprintf("taskUsbCommandParser(): Min Stack Space = %d words\n", minStackSpace);
+            // -----------------------------------------------------------
+            //  Wait for a EOL character, then parse the substring
+            // -----------------------------------------------------------
+            retVal = eolSearch( readPointer, remainderSize );
+            if( retVal > -1 ){                                              //EOL was found in new chars
+                readPointer += retVal + 1;                                  //Points to the first remainder char after the found EOL char
+                remainderSize -= retVal + 1;                                //Length of the remainder after the CMD
+                //Parse cmd from beginning of charBuffer
+                if( cmdParse( charBuffer, nCharsRead + retVal ) == PARS_MODE_BIN_LED ){  //cmdParse might enable PARS_MODE_BIN_LED
+                    // -----------------------------------------------------------
+                    //  Switch to binary input mode
+                    // -----------------------------------------------------------
+                    currentMode = PARS_MODE_BIN_LED;
+                    //Okay we need to copy the remainder from the charBuffer into the SPI buffer
+                    nCharsRead = min(remainderSize,g_LEDnBytesToCopy);      //How many chars to copy? remainder might contain more commands!
+                    memcpy( g_spiBuffer[ g_LEDChannel ], readPointer, nCharsRead );
+                    spiWritePointer= &g_spiBuffer[g_LEDChannel][nCharsRead];//Points to next free char in spiBuffer
+                    readPointer += nCharsRead;
+                    remainderSize -= nCharsRead;                            //This is the remainder after taking the LED data out
+                                                                            //Might not be zero if multiple commands are in charBuffer!
+                } else {
+                    nCharsRead = 0;                                         //We've processed one command, start again with the next!
+                }
+                // -----------------------------------------------------------
+                //  Prepare parsing of the next Ascii cmd
+                // -----------------------------------------------------------
+                //Okay we need to copy the remainder from the charBuffer into the beginning of the charBuffer
+                memcpy( charBuffer, readPointer, remainderSize );       //Remainder is now in the beginning
+                // At this point, either all chars are processed (reminderSize=0)
+                // Or the remaining chars have been copied to the beginning of the charBuffer
+                readPointer = charBuffer;
+                writePointer = &charBuffer[remainderSize];              //Point to first free char
+
+            } else {
+                // -----------------------------------------------------------
+                //  Here we have processed all chars in charBuffer and haven't
+                //  Found any EOL. Keep appending new stuff to it.
+                //  Also Check how many chars we can still append
+                // -----------------------------------------------------------
+                nCharsRead += remainderSize;
+                readPointer += remainderSize;
+                remainderSize = 0;
+                if( nCharsRead >= CMD_PARSER_BUF_LEN - 1 ){
+                    UARTprintf("%22s: %s", "taskUsbCommandParser()", "Command buffer overflow, try a shorter command!\n");
+                    while(1);
+//                    USBBufferFlush( &g_sRxBuffer );
+//                    writePointer = charBuffer;
+//                    nCharsRead = 0;
+//                    remainderSize = 0;
+                }                                       //We still have space!
+//                UARTprintf("%22s: nCharsRead = %d\n", "taskUsbCommandParser()", nCharsRead);
+            }
+            break;
+
+        case PARS_MODE_BIN_LED:
+            // -----------------------------------------------------------
+            //  simply take g_LEDnBytesToCopy bytes from USB and put them
+            //  in the spiBuffer
+            // -----------------------------------------------------------
+            if( nCharsRead < g_LEDnBytesToCopy ){       //If there was not enough data in the remainder, get more over USB
+                ASSERT( remainderSize == 0 );           //Remainder must be empty before we take data from USB
+                tempCharsRead = USBBufferRead(&g_sRxBuffer, spiWritePointer, g_LEDnBytesToCopy-nCharsRead );
+                spiWritePointer += tempCharsRead;
+                nCharsRead += tempCharsRead;
+            }
+            if( nCharsRead >= g_LEDnBytesToCopy ){      //Are we good already?
+                spiSend( g_LEDChannel, g_LEDnBytesToCopy );
+                nCharsRead = 0;
+                currentMode = PARS_MODE_ASCII;
+            }
+            break;
+
+        default:
+            UARTprintf("%22s: Unknown currentMode!\n", "taskUsbCommandParser()");
         }
     }
 }
@@ -397,17 +467,14 @@ int Cmd_SW(int argc, char *argv[]) {
     uint8_t i;
     ustrncpy(outBuffer, "SW:", REPORT_SWITCH_BUF_SIZE); //SW = Hex coded switch state
     for (i = 0; i < N_LONGS; i++) {
-        charsWritten += usnprintf(&outBuffer[charsWritten],
-                REPORT_SWITCH_BUF_SIZE - charsWritten, "%08x",
-                g_SwitchStateDebounced.longValues[i]);
-        if (charsWritten >= REPORT_SWITCH_BUF_SIZE - 10) {
+        charsWritten += usnprintf( &outBuffer[charsWritten], REPORT_SWITCH_BUF_SIZE - charsWritten, "%08x", g_SwitchStateDebounced.longValues[i] );
+        if (charsWritten >= REPORT_SWITCH_BUF_SIZE - 1) {
             UARTprintf("Cmd_SW(): string buffer overflow!\n");
             return (0);
         }
     }
-    outBuffer[charsWritten - 1] = '\n';
-    outBuffer[charsWritten] = '\r';
-    ts_usbSend((uint8_t*) outBuffer, charsWritten + 1);
+    outBuffer[ charsWritten ] = '\n';
+    ts_usbSend((uint8_t*) outBuffer, charsWritten+1 );
     return (0);
 }
 
@@ -548,17 +615,8 @@ int Cmd_RUL(int argc, char *argv[]) {
 
 uint8_t g_spiBuffer[3][N_LEDS_MAX*3];   //3 channels * 3 colors --> 9.2 kByte
 
-typedef struct{
-    uint32_t nBytesToRead;
-    uint8_t *writePointer;
-    void (*callbackWhenFinished)(void);
-}t_serialBinaryCallback;
-
-t_serialBinaryCallback g_serialCallback;
-
-void Cmd_LED_done(){
-    spi
-}
+uint32_t g_LEDnBytesToCopy = 0;
+int8_t g_LEDChannel = -1;
 
 int Cmd_LED(int argc, char *argv[]) {   //Here we need to switch the serialCommandParser to Binary mode
     //LED 0 128\nxxxxxx
@@ -573,9 +631,9 @@ int Cmd_LED(int argc, char *argv[]) {   //Here we need to switch the serialComma
                 return 0;
             }
 //            UARTprintf("Blasting %d bytes of data to LED string on channel %d\n", blobSize, channel);
-            g_serialCallback.nBytesToRead = blobSize;
-            g_serialCallback.writePointer = g_spiBuffer[channel];
-            g_serialCallback.callbackWhenFinished = Cmd_LED_done;
+            g_LEDnBytesToCopy = blobSize;
+            g_LEDChannel = channel;
+            return PARS_MODE_BIN_LED;
         } else {
             UARTprintf("%22s: Invalid LED channel (%d)\n", "Cmd_LED()", channel);
         }
@@ -660,6 +718,7 @@ void spiISR( uint8_t channel ){         //FIFO got 8 positions, we get notified 
 }
 
 void spiSend( uint8_t channel, uint32_t nBytes ){
+//    return;
     t_spiTransferState *state = &g_spiState[channel];
     if( xSemaphoreTake( state->semaToReleaseWhenFinished, 1000 ) ){
         state->currentByte = g_spiBuffer[channel];
@@ -718,7 +777,7 @@ void taskI2CCustomReporter(void *pvParameters) {
                 writePointer += usprintf( (char*)writePointer, "I2CM_STATUS_ERROR" );
             break;
             }
-            writePointer += usprintf( (char*)writePointer, "\n\r" );
+            writePointer += usprintf( (char*)writePointer, "\n" );
             ts_usbSend( outBuffer, ustrlen((char*)outBuffer) );
             xSemaphoreGive( g_MutexCustomI2C ); // release the Mutex to allow another custom I2C command
         }

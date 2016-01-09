@@ -104,7 +104,7 @@ uint32_t RxHandler( void *pvCBData, uint32_t ui32Event, uint32_t ui32MsgValue, v
     switch(ui32Event){					// Which event are we being sent?
         case USB_EVENT_RX_AVAILABLE:	// A new packet has been received.  Notify and wake up parser task
         	 vTaskNotifyGiveFromISR( hUSBCommandParser, &xHigherPriorityTaskWoken );
-//        	 portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
+        	 portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
 		break;
         // We are being asked how much unprocessed data we have still to
         // process. We return 0 if the command parser is IDLE or 1 if it is
