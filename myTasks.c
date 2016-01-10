@@ -193,6 +193,7 @@ void taskUsbCommandParser( void *pvParameters ) {
                     ulTaskNotifyTake( pdTRUE, portMAX_DELAY);   // Wait for receiving new serial data over USB
                 }                                               // Here we must have new data in any case
                 tempCharsRead = USBBufferRead(&g_sRxBuffer, writePointer, CMD_PARSER_BUF_LEN-nCharsRead-1 );
+//                UARTwrite( writePointer, tempCharsRead );
                 writePointer += tempCharsRead;
                 remainderSize += tempCharsRead;                 // How many chars to process
             }
