@@ -5,7 +5,7 @@ Controller for Pinball machines based on an TM4C123G LaunchPad™ Evaluation Kit
  * 8x8 Switch matrix inputs
  * 12 onboard drivers for solenoids, 4 of them can do hardware PWM (> 100 kHz)
  * 4 x I2C channels for extension boards (solenoid drivers, switch inputs, LED drivers, servo drivers, ...)
- * 3 x SPI channels for running [WS2811 / WS2812 LED strings](http://www.ebay.com/sch/i.html?_from=R40&_trksid=p2050601.m570.l1313.TR0.TRC0.H0.Xled+strand+ws2811.TRS5&_nkw=led+strand+ws2811&_sacat=0) with up to 1024 LEDs per channel
+ * 3 x SPI channels for running [WS2811 / WS2812 LED strings](http://www.ebay.com/sch/i.html?_from=R40&_trksid=p2050601.m570.l1313.TR0.TRC0.H0.Xled+strand+ws2811.TRS5&_nkw=led+strand+ws2811&_sacat=0) with up to 512 LEDs per channel
  * In- / Outputs can be easily and cheaply added with [PCF8574](http://www.ti.com/product/pcf8574) I2C GPIO extenders (check eBay for [cheap I/O modules](http://www.ebay.com/sch/i.html?_sacat=0&_nkw=i2c+expander&_frs=1))
  * Super fast USB virtual serial connection to host PC
  * KiCad PCB files available, no tiny SMD components, can be assembled by hand
@@ -193,7 +193,7 @@ Setup ruleId 0. Input hwIndex is 0x23, output hwIndex is 0x100. After triggering
    least 4 ms ellapsed), the output is switched off again.
 
 ## `LED` dump data to WS2811 RGB LED strings
-There are 3 channels which can address up to 1024 LEDs each. 
+There are 3 channels which can address up to 512 LEDs each. 
 First argument is the channel address (0-2).
 Second argument is the number of bytes which will be sent (nBytes) and must be an integer multiple of 3.
 Each LED needs to be set with 1 byte per color. For the WS2811 LED chip, the order of the bytes is RGB. 

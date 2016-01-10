@@ -17,7 +17,7 @@
 //ToDO: FREERTOS will crash when REPORT_SWITCH_BUF_SIZE > 400, why?
 // --> as during the context switch it copies the whole thing on the stack :p
 // Now we use static to make all large buffers invisible to the context switcher
-#define REPORT_SWITCH_BUF_SIZE 256		//Char buffer size for reporting events
+#define REPORT_SWITCH_BUF_SIZE 90		//Char buffer size for reporting events
 
 // Flags for quick-fire rules
 //[0] enable/disable, [1] trigger on positive/negative edge, [2] disable ouput on release, [3] invert output, [4] apply now)

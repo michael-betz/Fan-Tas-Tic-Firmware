@@ -13,6 +13,7 @@
 #include "inc/hw_types.h"
 #include "inc/hw_timer.h"
 #include "inc/hw_gpio.h"
+#include "inc/hw_ints.h"
 
 #include "sensorlib/i2cm_drv.h"
 #include "utils/uartstdio.h"
@@ -25,6 +26,7 @@
 #include "driverlib/sysctl.h"
 #include "driverlib/debug.h"
 #include "driverlib/rom.h"
+#include "driverlib/interrupt.h"
 
 // FreeRTOS includes
 #include "FreeRTOSConfig.h"
@@ -155,6 +157,24 @@ int main(void) {
     USBDCDCInit(0, &g_sCDCDevice);
 
     //-------------------------------------------------------------------------
+    // The WS2811 LEDs will glitch if the SPI buffer has an underflow, hence
+    // the SPI interrupt gets a higher priority
+    // Highest Int priority = (0<<5)    (only upper 3 bits count)
+    // Lowest Int priority  = (7<<5)
+    //-------------------------------------------------------------------------
+    ROM_IntPrioritySet(INT_USB0, (7<<5) );     //USB = Low priority
+    ROM_IntPrioritySet(INT_I2C0, (6<<5) );     //I2C = Medium priority
+    ROM_IntPrioritySet(INT_I2C1, (6<<5) );
+    ROM_IntPrioritySet(INT_I2C2, (6<<5) );
+    ROM_IntPrioritySet(INT_I2C3, (6<<5) );
+    ROM_IntPrioritySet(INT_I2C3, (6<<5) );
+    ROM_IntPrioritySet(INT_UART0,(7<<5) );     //Debug UART = Low priority
+    ROM_IntPrioritySet(INT_SSI1, (5<<5) );     //SPI  = High priority
+    ROM_IntPrioritySet(INT_SSI2, (5<<5) );
+    ROM_IntPrioritySet(INT_SSI3, (5<<5) );
+
+
+    //-------------------------------------------------------------------------
     // Startup the FreeRTOS scheduler
     //-------------------------------------------------------------------------
     // Create demo tasks
@@ -164,10 +184,10 @@ int main(void) {
     xTaskCreate(taskI2CCustomReporter, (const portCHAR *)"I2CcusRep", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
     // Create USB command parser task
-    xTaskCreate(taskUsbCommandParser, (const portCHAR *)"Parser", 256, NULL, 2, &hUSBCommandParser);
+    xTaskCreate(taskUsbCommandParser, (const portCHAR *)"Parser", 256, NULL, 1, &hUSBCommandParser);
 
     // Create I2C / Matrix debouncer
-    xTaskCreate(taskDebouncer, (const portCHAR *)"Debouncer", 256, NULL, 1, NULL);
+    xTaskCreate(taskDebouncer, (const portCHAR *)"Debouncer", 256, NULL, 0, NULL);
 
     // Dispatch I2C write commands to PCL GPIO extenders every 1 ms
     xTaskCreate(taskPCLOutWriter, (const portCHAR *)"PCLwriter", configMINIMAL_STACK_SIZE, NULL, 1, NULL);

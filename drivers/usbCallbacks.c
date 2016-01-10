@@ -111,7 +111,7 @@ uint32_t RxHandler( void *pvCBData, uint32_t ui32Event, uint32_t ui32MsgValue, v
         // in the process of parsing something.
         case USB_EVENT_DATA_REMAINING:
 //        	UARTprintf(" USB_EVENT_DATA_REMAINING ");
-        	return( 0 );
+        	return( USBBufferDataAvailable(&g_sRxBuffer) );
         case USB_EVENT_REQUEST_BUFFER:			// We are being asked to provide a buffer into which the next packet
 //        	UARTprintf(" USB_EVENT_REQUEST_BUFFER ");
             return(0);

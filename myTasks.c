@@ -182,6 +182,18 @@ void taskUsbCommandParser( void *pvParameters ) {
     uint8_t *readPointer = charBuffer;                          // Points to the next unprocessed character
     uint8_t *spiWritePointer;                                   // Points to first free place in spiBuffer
     t_usbParserMode currentMode = PARS_MODE_ASCII;
+//    for( tempCharsRead=0; tempCharsRead<1024*3; tempCharsRead++ ){
+//        g_spiBuffer[1][tempCharsRead] = 0x00;
+//    }
+//    spiSend( 1, 1024 );
+//    vTaskDelay( 1000 );
+//    while (1) {
+//        for( tempCharsRead=0; tempCharsRead<1024*3; tempCharsRead++ ){
+//            g_spiBuffer[1][tempCharsRead] = 0x01;
+//        }
+//        spiSend( 0, 1024 );
+//        spiSend( 1, 1024 );
+//    }
     while (1) {
         switch( currentMode ){
         case PARS_MODE_ASCII:
@@ -679,53 +691,69 @@ void spiSetup(){
     spiHwSetup( 2, SSI3_BASE, INT_SSI3 );
 }
 
+
+volatile uint8_t g_firstRun=1;
+
 void spiISR( uint8_t channel ){         //FIFO got 8 positions, we get notified when it is half full or less
     uint8_t temp, nib, retVal;          //This will come back every 20 us or 1300 ticks
-    uint32_t status;//,ticks;              //as long as there is data to be sent
+    uint32_t status;//,ticks;           //as long as there is data to be sent
     t_spiTransferState *state = &g_spiState[channel];
 //    ticks = stopTimer();
     status = ROM_SSIIntStatus(state->baseAdr, true);
-    if( status & SSI_TXFF ){
-        temp = *state->currentByte;
-        while( state->nBytesLeft > 0 ){
-            if( state->doFirstNibbel ){     // Do first nibble
-                nib = (temp & 0xF0) >> 4;   // MSB nibble
-            } else {
-                nib = temp & 0x0F;          // LSB nibble
-            }
-            retVal = ROM_SSIDataPutNonBlocking( state->baseAdr, g_ssi_lut[nib] );
-            if( retVal ){                   //Success
-                if( state->doFirstNibbel ){
-                    state->doFirstNibbel = false;
-                } else {
-                    state->doFirstNibbel = true;
-                    state->currentByte++;
-                    temp = *state->currentByte;
-                    state->nBytesLeft--;
-                }
-            } else {                        //Didn't work. TX FIFO is full!
-//                startTimer();
-                return;                     //Exit the interrupt and continue sending in next one
-            }
-        }                                   //No more bytes to send!
-//        UARTprintf("%22s: %d Ticks between ISRs\n", "spiISR()", ticks);
-        if( !SSIBusy(state->baseAdr) ){     //Check if SPI TX is finished already
-            ROM_IntDisable( state->intNo );
-            xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
-            return;
-        }
-        // Wait for SPI to empty the FIFO and trigger the SSI_TXEOT interrupt
+    if( !(status&SSI_TXFF) ){           //Check for FIFO interrupt
+        return;                         //Unknown interrupt source
     }
+    temp = *state->currentByte;
+    while( state->nBytesLeft > 0 ){
+        if( state->doFirstNibbel ){     // Do first nibble
+            nib = (temp & 0xF0) >> 4;   // MSB nibble
+        } else {
+            nib = temp & 0x0F;          // LSB nibble
+        }
+        if( g_firstRun ){               // Check for buffer underflow
+            g_firstRun = 0;
+        } else {
+//            ASSERT( ROM_SSIBusy(state->baseAdr) );//Otherwise buffer underflow & LED glitch
+            if( !ROM_SSIBusy(state->baseAdr) ){
+                UARTprintf("%22s: Buffer underflow :(\n", "spiISR()");
+                state->nBytesLeft = 0;          // We cancel the transmission as continuing
+                ROM_IntDisable( state->intNo ); // will only make the LED glitches worse!
+                xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
+            }
+        }
+        retVal = ROM_SSIDataPutNonBlocking( state->baseAdr, g_ssi_lut[nib] );
+        if( retVal ){                   //Success
+            if( state->doFirstNibbel ){
+                state->doFirstNibbel = false;
+            } else {
+                state->doFirstNibbel = true;
+                state->currentByte++;
+                temp = *state->currentByte;
+                state->nBytesLeft--;
+            }
+        } else {                        //Didn't work. TX FIFO is full!
+//                startTimer();
+            return;                     //Exit the interrupt and continue sending in next one
+        }
+    }                                   //No more bytes to send!
+//        UARTprintf("%22s: %d Ticks between ISRs\n", "spiISR()", ticks);
+    if( !ROM_SSIBusy(state->baseAdr) ){     //Check if SPI TX is finished already
+        ROM_IntDisable( state->intNo );
+        xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
+        return;
+    }
+    // Wait for SPI to empty the FIFO and trigger the SSI_TXEOT interrupt
 }
 
 void spiSend( uint8_t channel, uint32_t nBytes ){
 //    return;
     t_spiTransferState *state = &g_spiState[channel];
-    if( xSemaphoreTake( state->semaToReleaseWhenFinished, 1000 ) ){
+    if( xSemaphoreTake( state->semaToReleaseWhenFinished, 100 ) ){
         state->currentByte = g_spiBuffer[channel];
         state->doFirstNibbel = true;
         state->nBytesLeft = nBytes;
 //      Enable and Trigger SPI TX buffer empty interrupt
+        g_firstRun = 1;
         ROM_IntEnable( state->intNo );
         ROM_SSIIntEnable( state->baseAdr, SSI_TXFF );  //Enable FIFO is less than halffull int
         // It will jump to the ISR and start sending data immediately
