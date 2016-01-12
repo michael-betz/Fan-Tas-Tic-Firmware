@@ -27,6 +27,7 @@
 #include "driverlib/pin_map.h"
 #include "driverlib/gpio.h"
 #include "driverlib/debug.h"
+#include "driverlib/interrupt.h"
 #include "driverlib/rom.h"
 #include "driverlib/sysctl.h"
 #include "sensorlib/i2cm_drv.h"
@@ -41,36 +42,16 @@
 #include "usblib/device/usbdcdc.h"
 #include "usb_serial_structs.h"
 #include "myTasks.h"
+#include "mySpi.h"
 #include "i2cHandlerTask.h"
 
 // Global vars
 t_PCLOutputByte g_outWriterList[OUT_WRITER_LIST_LEN];   // A list to keep track of the state of all output pins
-t_spiTransferState g_spiState[3];
 TaskHandle_t g_customI2cTask = NULL;
 SemaphoreHandle_t g_MutexCustomI2C = NULL;
 uint16_t g_customI2CnBytesRx;
 uint8_t g_customI2CrxBuffer[CUSTOM_I2C_BUF_LEN];
 uint8_t g_customI2Cstate;
-
-
-const uint16_t g_ssi_lut[16] = {                        // Encodes a 4 bit nibble to a 16 bit SPI word
-    0b1000100010001000,     //0                         // The SPI modules sends MSB first!
-    0b1000100010001100,     //1
-    0b1000100011001000,     //2
-    0b1000100011001100,     //3
-    0b1000110010001000,     //4
-    0b1000110010001100,     //5
-    0b1000110011001000,     //6
-    0b1000110011001100,     //7
-    0b1100100010001000,     //8
-    0b1100100010001100,     //9
-    0b1100100011001000,     //A
-    0b1100100011001100,     //B
-    0b1100110010001000,     //C
-    0b1100110010001100,     //D
-    0b1100110011001000,     //E
-    0b1100110011001100,     //F
-};
 
 //-----------------------
 // Command parser
@@ -170,6 +151,9 @@ uint32_t min( uint32_t a, uint32_t b ){
 typedef enum{
     PARS_MODE_ASCII, PARS_MODE_BIN_LED
 }t_usbParserMode;
+
+uint32_t g_LEDnBytesToCopy;
+int8_t g_LEDChannel;
 
 void taskUsbCommandParser( void *pvParameters ) {
     // Read data from USB serial and parse it
@@ -626,11 +610,6 @@ int Cmd_RUL(int argc, char *argv[]) {
     return CMDLINE_TOO_FEW_ARGS;
 }
 
-uint8_t g_spiBuffer[3][N_LEDS_MAX*3];   //3 channels * 3 colors --> 9.2 kByte
-
-uint32_t g_LEDnBytesToCopy = 0;
-int8_t g_LEDChannel = -1;
-
 int Cmd_LED(int argc, char *argv[]) {   //Here we need to switch the serialCommandParser to Binary mode
     //LED 0 128\nxxxxxx
     uint8_t channel;
@@ -654,112 +633,6 @@ int Cmd_LED(int argc, char *argv[]) {   //Here we need to switch the serialComma
         UARTprintf("%22s: Invalid number of arguments (%d)\n", "Cmd_LED()", argc);
     }
     return( 0 );
-}
-
-void spiHwSetup( uint8_t channel, uint32_t ssin_base, uint8_t intNo ){
-    ROM_SSIDisable( ssin_base );
-    // USer internal 120 MHz clock
-    ROM_SSIClockSourceSet( ssin_base, SSI_CLOCK_SYSTEM );
-    // SPI at 3.2 MHz, 16 bit words (encoding 4 bit data)
-    ROM_SSIConfigSetExpClk( ssin_base, SYSTEM_CLOCK, SSI_FRF_MOTO_MODE_1, SSI_MODE_MASTER, 3200000, 16 );
-    // Enable it
-    ROM_SSIEnable( ssin_base );
-    g_spiState[channel].baseAdr = ssin_base;
-    g_spiState[channel].intNo = intNo;
-    g_spiState[channel].semaToReleaseWhenFinished = xSemaphoreCreateBinary();
-    xSemaphoreGive( g_spiState[channel].semaToReleaseWhenFinished );
-}
-
-void spiSetup(){
-    // Enable SPI modules
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_SSI1 );
-    ROM_SysCtlPeripheralReset(  SYSCTL_PERIPH_SSI1 );
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_SSI2 );
-    ROM_SysCtlPeripheralReset(  SYSCTL_PERIPH_SSI2 );
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_SSI3 );
-    ROM_SysCtlPeripheralReset(  SYSCTL_PERIPH_SSI3 );
-//    // Select the pinout
-    ROM_GPIOPinConfigure( GPIO_PF1_SSI1TX );     //SSI1
-    ROM_GPIOPinConfigure( GPIO_PB7_SSI2TX );     //SSI2
-    ROM_GPIOPinConfigure( GPIO_PD3_SSI3TX );     //SSI3
-    ROM_GPIOPinTypeSSI(   GPIO_PORTF_BASE, GPIO_PIN_1 );
-    ROM_GPIOPinTypeSSI(   GPIO_PORTB_BASE, GPIO_PIN_7 );
-    ROM_GPIOPinTypeSSI(   GPIO_PORTD_BASE, GPIO_PIN_3 );
-//    // Setup SPI modules
-    spiHwSetup( 0, SSI1_BASE, INT_SSI1 );
-    spiHwSetup( 1, SSI2_BASE, INT_SSI2 );
-    spiHwSetup( 2, SSI3_BASE, INT_SSI3 );
-}
-
-
-volatile uint8_t g_firstRun=1;
-
-void spiISR( uint8_t channel ){         //FIFO got 8 positions, we get notified when it is half full or less
-    uint8_t temp, nib, retVal;          //This will come back every 20 us or 1300 ticks
-    uint32_t status;//,ticks;           //as long as there is data to be sent
-    t_spiTransferState *state = &g_spiState[channel];
-//    ticks = stopTimer();
-    status = ROM_SSIIntStatus(state->baseAdr, true);
-    if( !(status&SSI_TXFF) ){           //Check for FIFO interrupt
-        return;                         //Unknown interrupt source
-    }
-    temp = *state->currentByte;
-    while( state->nBytesLeft > 0 ){
-        if( state->doFirstNibbel ){     // Do first nibble
-            nib = (temp & 0xF0) >> 4;   // MSB nibble
-        } else {
-            nib = temp & 0x0F;          // LSB nibble
-        }
-        if( g_firstRun ){               // Check for buffer underflow
-            g_firstRun = 0;
-        } else {
-//            ASSERT( ROM_SSIBusy(state->baseAdr) );//Otherwise buffer underflow & LED glitch
-            if( !ROM_SSIBusy(state->baseAdr) ){
-                UARTprintf("%22s: Buffer underflow :(\n", "spiISR()");
-                state->nBytesLeft = 0;          // We cancel the transmission as continuing
-                ROM_IntDisable( state->intNo ); // will only make the LED glitches worse!
-                xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
-            }
-        }
-        retVal = ROM_SSIDataPutNonBlocking( state->baseAdr, g_ssi_lut[nib] );
-        if( retVal ){                   //Success
-            if( state->doFirstNibbel ){
-                state->doFirstNibbel = false;
-            } else {
-                state->doFirstNibbel = true;
-                state->currentByte++;
-                temp = *state->currentByte;
-                state->nBytesLeft--;
-            }
-        } else {                        //Didn't work. TX FIFO is full!
-//                startTimer();
-            return;                     //Exit the interrupt and continue sending in next one
-        }
-    }                                   //No more bytes to send!
-//        UARTprintf("%22s: %d Ticks between ISRs\n", "spiISR()", ticks);
-    if( !ROM_SSIBusy(state->baseAdr) ){     //Check if SPI TX is finished already
-        ROM_IntDisable( state->intNo );
-        xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
-        return;
-    }
-    // Wait for SPI to empty the FIFO and trigger the SSI_TXEOT interrupt
-}
-
-void spiSend( uint8_t channel, uint32_t nBytes ){
-//    return;
-    t_spiTransferState *state = &g_spiState[channel];
-    if( xSemaphoreTake( state->semaToReleaseWhenFinished, 100 ) ){
-        state->currentByte = g_spiBuffer[channel];
-        state->doFirstNibbel = true;
-        state->nBytesLeft = nBytes;
-//      Enable and Trigger SPI TX buffer empty interrupt
-        g_firstRun = 1;
-        ROM_IntEnable( state->intNo );
-        ROM_SSIIntEnable( state->baseAdr, SSI_TXFF );  //Enable FIFO is less than halffull int
-        // It will jump to the ISR and start sending data immediately
-    } else {
-        UARTprintf("%22s: Timeout, could not access sendBuffer %d\n", "spiSend()", channel);
-    }
 }
 
 uint8_t hexDigitToNibble( uint8_t hexChar ){

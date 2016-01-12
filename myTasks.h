@@ -12,7 +12,6 @@
 // Defines
 //*****************************************************************************
 #define N_BIT_PWM 4
-#define N_LEDS_MAX 512
 //#define CMD_PARSER_BUF_LEN (N_LEDS_MAX*3+28)   //Need 3072 for LED data blob of 1 channel
 #define CMD_PARSER_BUF_LEN 128                   //Most commands fit
 #define OUT_WRITER_LIST_LEN 32
@@ -45,25 +44,12 @@ typedef struct {                    // State of all outputs on a PCF8574 IO exte
     t_BitModifyRules bitRules[8];   // Hold the state of each output pin
 } t_PCLOutputByte;
 
-typedef struct {
-    uint32_t baseAdr;
-    uint8_t *currentByte;
-    uint32_t nBytesLeft;
-    bool doFirstNibbel;
-    SemaphoreHandle_t semaToReleaseWhenFinished;
-    uint8_t intNo;      //Hardware interrupt number
-}t_spiTransferState;
-
 //*****************************************************************************
 // Global vars
 //*****************************************************************************
 extern TaskHandle_t hUSBCommandParser;
 extern TaskHandle_t g_customI2cTask;        //Task to notify once custom i2c command is done
 extern SemaphoreHandle_t g_MutexCustomI2C;  //To ensure the custom I2C is done before next one starts
-extern const uint16_t g_ssi_lut[16];
-extern uint8_t g_spiBuffer[3][N_LEDS_MAX*3];//3 channels * 3 colors --> 9.2 kByte
-extern uint32_t g_LEDnBytesToCopy;
-extern int8_t g_LEDChannel;
 
 //*****************************************************************************
 // Function / Task declaations
@@ -86,8 +72,5 @@ void usbReporter(void *pvParameters);
 void ts_usbSend(uint8_t *data, uint16_t len);
 t_outputBit decodeHwIndex(uint16_t hwIndex);
 void setPclOutput(t_outputBit outLocation, int16_t tPulse, uint8_t highPower, uint8_t lowPower);
-void spiSend( uint8_t channel, uint32_t nBytes );
-void spiSetup();
-void spiISR( uint8_t channel );
 
 #endif /* FAN_TAS_TIC_CONTROLLER_MYTASKS_H_ */

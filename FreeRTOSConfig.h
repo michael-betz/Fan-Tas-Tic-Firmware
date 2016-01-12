@@ -157,8 +157,8 @@ standard names. */
 //#define xPortPendSVHandler PendSV_Handler
 //#define xPortSysTickHandler SysTick_Handler
 
-#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() configureTimer()
-#define portGET_RUN_TIME_COUNTER_VALUE() (getTimer()>>8)
+//#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() configureTimer()
+//#define portGET_RUN_TIME_COUNTER_VALUE() (getTimer()>>8)
 
 #endif /* FREERTOS_CONFIG_H */
 

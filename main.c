@@ -43,9 +43,10 @@
 #include "usb_serial_structs.h"
 
 //My stuff
-#include "main.h"
 #include "myTasks.h"
 #include "i2cHandlerTask.h"
+#include "mySpi.h"
+#include "main.h"
 
 TaskHandle_t hUSBCommandParser = NULL;
 
@@ -59,6 +60,7 @@ void configureTimer() {
     ROM_TimerConfigure(TIMER1_BASE, TIMER_CFG_ONE_SHOT_UP); // Configure Timer Operation as one shot up counting
 //    ROM_TimerConfigure(TIMER1_BASE, TIMER_CFG_PERIODIC_UP ); // For freertos stats
     ROM_TimerEnable(TIMER1_BASE, TIMER_A);                   // Start Timer 1A
+    stopTimer();
 }
 void startTimer() {
     ROM_TimerEnable(TIMER1_BASE, TIMER_A); // Start Timer 1A
@@ -133,7 +135,7 @@ int main(void) {
             " Hi, here's the brain of Fan-Tas-Tic Pinball V0.0 \n"
             "**************************************************\n\n");
 
-//    configureTimer();   //Init HW timer for measuring processor cycles (%timeit)
+    configureTimer();   //Init HW timer for measuring processor cycles (%timeit)
     initMyI2C();        //Init the 4 I2C hardware channels
     spiSetup();         //Init 3 SPI channels for setting ws2811 LEDs
 
@@ -190,7 +192,7 @@ int main(void) {
     xTaskCreate(taskDebouncer, (const portCHAR *)"Debouncer", 256, NULL, 0, NULL);
 
     // Dispatch I2C write commands to PCL GPIO extenders every 1 ms
-    xTaskCreate(taskPCLOutWriter, (const portCHAR *)"PCLwriter", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(taskPCLOutWriter, (const portCHAR *)"PCLwriter", 128, NULL, 1, NULL);
 
     vTaskStartScheduler();  // This should never return!
     return 0;
@@ -198,7 +200,6 @@ int main(void) {
 
 //ASSERT() Error function failed ASSERTS() from driverlib/debug.h are executed in this function
 void __error__(char *pcFilename, uint32_t ui32Line) {
-    UARTprintf("__error__( %s, %d )", pcFilename, ui32Line);
     while (1)
         ; // Place a breakpoint here to capture errors until logging routine is finished
 }
