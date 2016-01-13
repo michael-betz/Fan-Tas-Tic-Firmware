@@ -165,6 +165,8 @@ uint8_t *fillPiongBuffer( uint8_t *srcPointer, uint16_t *destPointer, int32_t *n
     if( *nBytesLeft <= 0 ){
         return srcPointer;
     }
+    // Copy always one full Ping/Pong buffer
+    // (Could contain some dirt from the last transmission)
     for( i=0; i<SPI_DMA_BUFFER_SIZE/2; i++ ){
         *destPointer++ = g_ssi_lut[ (*srcPointer)>>4 ];     //Encode hi nibble to 16 bit SPI word
         *destPointer++ = g_ssi_lut[ (*srcPointer)& 0x0F ];  //Encode lo nibble to 16 bit SPI word
@@ -178,23 +180,12 @@ void spiISR( uint8_t channel ){
     //Is called by uDMA interrupt after one block has been transferred! (takes 640 us)
     //It takes < 50 us to refresh a buffer
     uint32_t temp;
+    uint16_t *bufferToRefill;
     t_spiTransferState *state = &g_spiState[channel];
     temp = ROM_SSIIntStatus(state->baseAdr, 1);
     ROM_SSIIntClear(state->baseAdr, temp);
-    // Check if all bytes have been transferred already
-    if( state->nLEDBytesLeft <= 0 || state->state == SPI_IDLE ){
-        state->state = SPI_IDLE;
-        xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
-//        UARTprintf("%22s: SPI_IDLE, Done! Ch %d\n", "spiISR()", channel);
-        return;
-        // Disable SSI int ( else retrigger and faultISR :( )
-//        ROM_IntDisable( state->intNo );
-    }
-    // One DMA transfer is done if channel is disabled
-    if( ROM_uDMAChannelIsEnabled(state->dmaChannel) ){
-        UARTprintf("%22s: WTF! uDMA is still active! Ch %d\n", "spiISR()", channel);
-        ASSERT(0);
-    }
+    // Make sure the previous DMA transfer has finished. Else something fishy is going on
+    ASSERT( !ROM_uDMAChannelIsEnabled(state->dmaChannel) );
     if( state->state == SPI_SEND_PING ){
         //---------------------------------------------
         //Send PING buffer, recharge PONG buffer
@@ -205,23 +196,36 @@ void spiISR( uint8_t channel ){
                                        (void *)(state->baseAdr + SSI_O_DR),
                                        SPI_DMA_BUFFER_SIZE );
         ROM_uDMAChannelEnable( state->dmaChannel );
-        state->currentLEDByte = fillPiongBuffer( state->currentLEDByte, state->pongBuffer, &state->nLEDBytesLeft );
-        state->state = SPI_SEND_PONG;
+        state->state = SPI_SEND_PONG;       // Setup next state
+        bufferToRefill = state->pongBuffer; // Setup next state
     } else if( state->state == SPI_SEND_PONG ){
         //---------------------------------------------
         //Send PONG buffer, recharge PING buffer
         //---------------------------------------------
-        //ASSERT( HWREG( state->baseAdr+SSI_O_SR) & SSI_SR_BSY );     //SPI is still transmitting (otherwise buffer underflow)
+        ASSERT( HWREG( state->baseAdr+SSI_O_SR) & SSI_SR_BSY );     //SPI is still transmitting (otherwise buffer underflow)
         ROM_uDMAChannelTransferSet( state->dmaChannel | UDMA_PRI_SELECT,
                                        UDMA_MODE_BASIC, state->pongBuffer,
                                        (void *)(state->baseAdr + SSI_O_DR),
                                        SPI_DMA_BUFFER_SIZE );
         ROM_uDMAChannelEnable( state->dmaChannel );
-        state->currentLEDByte = fillPiongBuffer( state->currentLEDByte, state->pingBuffer, &state->nLEDBytesLeft );
         state->state = SPI_SEND_PING;
+        bufferToRefill = state->pingBuffer;
+    } else if( state->state == SPI_IDLE ){
+        xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
+        return;
     } else {
         UARTprintf("%22s: WTF! unknow state. Ch %d\n", "spiISR()", channel);
         ASSERT(0);
+    }
+    // Check if a buffer recharge is neccesary
+    if( state->nLEDBytesLeft <= 0 ){
+        state->state = SPI_IDLE;    //Wait for last transfer to finish, the release semaphore
+//        UARTprintf("%22s: SPI_IDLE, Done! Ch %d\n", "spiISR()", channel);
+        // Disable SSI int ( else retrigger and faultISR :( )
+//        ROM_IntDisable( state->intNo );
+    } else {
+        // Otherwise refill the buffer
+        state->currentLEDByte = fillPiongBuffer( state->currentLEDByte, bufferToRefill, &state->nLEDBytesLeft );
     }
 }
 
@@ -232,21 +236,12 @@ void spiSend( uint8_t channel, int32_t nBytes ){
         //Need to init the PING buffer first
         srcPointer = g_spiBuffer[channel];
         srcPointer = fillPiongBuffer( srcPointer, state->pingBuffer, &nBytes );
-        srcPointer = fillPiongBuffer( srcPointer, state->pongBuffer, &nBytes );
         state->currentLEDByte = srcPointer;
         state->nLEDBytesLeft = nBytes;
-        //Start transmission of PING buffer here
-        // ISR _may_ start transmission of PONG buffer
-        state->state = SPI_SEND_PONG;
-        //---------------------------------------------
-        //Send PING buffer, recharge PONG buffer
-        //---------------------------------------------
-        // Basic = One shot mode. Define source buffer and dest. register and number of data items
-        ROM_uDMAChannelTransferSet( state->dmaChannel | UDMA_PRI_SELECT,
-                                       UDMA_MODE_BASIC, state->pingBuffer,
-                                       (void *)(state->baseAdr + SSI_O_DR),
-                                       SPI_DMA_BUFFER_SIZE );
-        ROM_uDMAChannelEnable( state->dmaChannel );
+        //Start transmission of PING buffer in the ISR
+        state->state = SPI_SEND_PING;
+        // Artificially Trigger SSI interrupt here
+        IntTrigger( state->intNo );
         // As soon as the first DMA is finished, the ISR will take over control
 //    } else {
 //        UARTprintf("%22s: Timeout, could not access sendBuffer %d\n", "spiSend()", channel);
