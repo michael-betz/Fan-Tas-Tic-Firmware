@@ -69,6 +69,9 @@ unsigned char ucControlTable[1024] __attribute__ ((aligned(1024)));
 t_spiTransferState g_spiState[3];
 uint8_t g_spiBuffer[3][N_LEDS_MAX*3];   //3 channels * 3 colors --> 9.2 kByte
 
+
+// Non inverted
+#define SPI_LOW_VALUE 0x0000
 const uint16_t g_ssi_lut[16] = {                        // Encodes a 4 bit nibble to a 16 bit SPI word
     0b1000100010001000,     //0                         // The SPI modules sends MSB first!
     0b1000100010001100,     //1
@@ -87,6 +90,27 @@ const uint16_t g_ssi_lut[16] = {                        // Encodes a 4 bit nibbl
     0b1100110011001000,     //E
     0b1100110011001100,     //F
 };
+
+// Inverted
+//#define SPI_LOW_VALUE 0xFFFF
+//const uint16_t g_ssi_lut[16] = {                        // Encodes a 4 bit nibble to a 16 bit SPI word
+//    0b0111011101110111,     //0
+//    0b0111011101110011,     //1
+//    0b0111011100110111,     //2
+//    0b0111011100110011,     //3
+//    0b0111001101110111,     //4
+//    0b0111001101110011,     //5
+//    0b0111001100110111,     //6
+//    0b0111001100110011,     //7
+//    0b0011011101110111,     //8
+//    0b0011011101110011,     //9
+//    0b0011011100110111,     //A
+//    0b0011011100110011,     //B
+//    0b0011001101110111,     //C
+//    0b0011001101110011,     //D
+//    0b0011001100110111,     //E
+//    0b0011001100110011,     //F
+//};
 
 void spiHwSetup( uint8_t channel, uint32_t ssin_base, uint8_t intNo, uint32_t dmaChannel ){
     ROM_SSIDisable( ssin_base );
@@ -144,7 +168,10 @@ void spiSetup(){
     ROM_GPIOPinConfigure( GPIO_PF1_SSI1TX );     //SSI1
     ROM_GPIOPinConfigure( GPIO_PB7_SSI2TX );     //SSI2
     ROM_GPIOPinConfigure( GPIO_PD3_SSI3TX );     //SSI3
+
     ROM_GPIOPinTypeSSI(   GPIO_PORTF_BASE, GPIO_PIN_1 );
+//    ROM_GPIOPinTypeGPIOOutput( GPIO_PORTF_BASE, GPIO_PIN_1 );
+//    ROM_GPIOPinWrite( GPIO_PORTF_BASE, GPIO_PIN_1, 0xFF );
     ROM_GPIOPinTypeSSI(   GPIO_PORTB_BASE, GPIO_PIN_7 );
     ROM_GPIOPinTypeSSI(   GPIO_PORTD_BASE, GPIO_PIN_3 );
     //---------------------------------------
@@ -186,7 +213,8 @@ void spiISR( uint8_t channel ){
     ROM_SSIIntClear(state->baseAdr, temp);
     // Make sure the previous DMA transfer has finished. Else something fishy is going on
     ASSERT( !ROM_uDMAChannelIsEnabled(state->dmaChannel) );
-    if( state->state == SPI_SEND_PING ){
+    switch( state->state ){
+    case SPI_SEND_PING:
         //---------------------------------------------
         //Send PING buffer, recharge PONG buffer
         //---------------------------------------------
@@ -198,7 +226,9 @@ void spiISR( uint8_t channel ){
         ROM_uDMAChannelEnable( state->dmaChannel );
         state->state = SPI_SEND_PONG;       // Setup next state
         bufferToRefill = state->pongBuffer; // Setup next state
-    } else if( state->state == SPI_SEND_PONG ){
+        break;
+
+    case SPI_SEND_PONG:
         //---------------------------------------------
         //Send PONG buffer, recharge PING buffer
         //---------------------------------------------
@@ -210,19 +240,34 @@ void spiISR( uint8_t channel ){
         ROM_uDMAChannelEnable( state->dmaChannel );
         state->state = SPI_SEND_PING;
         bufferToRefill = state->pingBuffer;
-    } else if( state->state == SPI_IDLE ){
+        break;
+
+    case SPI_SEND_ZERO:
+        //---------------------------------------------
+        //Keep line LOW for 50 us to latch LEDs
+        //---------------------------------------------
+        state->pingBuffer[0] = SPI_LOW_VALUE;
+        ROM_uDMAChannelControlSet(  state->dmaChannel | UDMA_PRI_SELECT,
+                                      UDMA_SIZE_16 | UDMA_SRC_INC_NONE | UDMA_DST_INC_NONE | UDMA_ARB_4 );
+        ROM_uDMAChannelTransferSet( state->dmaChannel | UDMA_PRI_SELECT,
+                                       UDMA_MODE_BASIC, state->pingBuffer,
+                                       (void *)(state->baseAdr + SSI_O_DR),
+                                       11 );    //10 * 16 * 1 / 3.2MHz = 50 us
+        ROM_uDMAChannelEnable( state->dmaChannel );
+        state->state = SPI_IDLE;
+        return;
+
+    case SPI_IDLE:
         xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
         return;
-    } else {
+
+    default:
         UARTprintf("%22s: WTF! unknow state. Ch %d\n", "spiISR()", channel);
         ASSERT(0);
     }
     // Check if a buffer recharge is neccesary
     if( state->nLEDBytesLeft <= 0 ){
-        state->state = SPI_IDLE;    //Wait for last transfer to finish, the release semaphore
-//        UARTprintf("%22s: SPI_IDLE, Done! Ch %d\n", "spiISR()", channel);
-        // Disable SSI int ( else retrigger and faultISR :( )
-//        ROM_IntDisable( state->intNo );
+        state->state = SPI_SEND_ZERO;    //Send 50 us of LOW to latch LEDs
     } else {
         // Otherwise refill the buffer
         state->currentLEDByte = fillPiongBuffer( state->currentLEDByte, bufferToRefill, &state->nLEDBytesLeft );
@@ -230,20 +275,22 @@ void spiISR( uint8_t channel ){
 }
 
 void spiSend( uint8_t channel, int32_t nBytes ){
-    uint8_t *srcPointer;
+    uint8_t *srcPointer;//, i;
     t_spiTransferState *state = &g_spiState[channel];
-//    if( xSemaphoreTake( state->semaToReleaseWhenFinished, 100 ) ){
-        //Need to init the PING buffer first
-        srcPointer = g_spiBuffer[channel];
-        srcPointer = fillPiongBuffer( srcPointer, state->pingBuffer, &nBytes );
-        state->currentLEDByte = srcPointer;
-        state->nLEDBytesLeft = nBytes;
-        //Start transmission of PING buffer in the ISR
-        state->state = SPI_SEND_PING;
-        // Artificially Trigger SSI interrupt here
-        IntTrigger( state->intNo );
-        // As soon as the first DMA is finished, the ISR will take over control
-//    } else {
-//        UARTprintf("%22s: Timeout, could not access sendBuffer %d\n", "spiSend()", channel);
+    ASSERT( !ROM_uDMAChannelIsEnabled(state->dmaChannel) );
+    ROM_uDMAChannelControlSet(  state->dmaChannel | UDMA_PRI_SELECT,
+                                      UDMA_SIZE_16 | UDMA_SRC_INC_16 | UDMA_DST_INC_NONE | UDMA_ARB_4 );
+    //Need to init the PING buffer first
+    srcPointer = g_spiBuffer[channel];
+//    for( i=0; i<SPI_DMA_BUFFER_SIZE; i++ ){
+//        state->pingBuffer[i] = SPI_LOW_VALUE;
 //    }
+    srcPointer = fillPiongBuffer( srcPointer, state->pingBuffer, &nBytes );
+    state->currentLEDByte = srcPointer;
+    state->nLEDBytesLeft = nBytes;
+    //Start transmission of PING buffer in the ISR
+    state->state = SPI_SEND_PING;
+    // Artificially Trigger SSI interrupt here
+    IntTrigger( state->intNo );
+    // As soon as the first DMA is finished, the ISR will take over control
 }

@@ -20,7 +20,7 @@
 //*****************************************************************************
 
 typedef enum{
-    SPI_IDLE, SPI_SEND_PING, SPI_SEND_PONG
+    SPI_IDLE, SPI_SEND_PING, SPI_SEND_PONG, SPI_SEND_ZERO
 }t_spiDmaState;
 
 typedef struct {
