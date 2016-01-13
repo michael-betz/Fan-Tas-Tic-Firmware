@@ -42,6 +42,7 @@ typedef struct {
 //*****************************************************************************
 extern const uint16_t g_ssi_lut[16];
 extern uint8_t g_spiBuffer[3][N_LEDS_MAX*3];//3 channels * 3 colors --> 9.2 kByte
+extern t_spiTransferState g_spiState[3];
 
 //*****************************************************************************
 // Function / Task declaations

@@ -201,7 +201,9 @@ void taskUsbCommandParser( void *pvParameters ) {
                 readPointer += retVal + 1;                                  //Points to the first remainder char after the found EOL char
                 remainderSize -= retVal + 1;                                //Length of the remainder after the CMD
                 //Parse cmd from beginning of charBuffer
-                if( cmdParse( charBuffer, nCharsRead + retVal ) == PARS_MODE_BIN_LED ){  //cmdParse might enable PARS_MODE_BIN_LED
+                if( cmdParse( charBuffer, nCharsRead + retVal ) == PARS_MODE_BIN_LED ){
+                    // cmdParse might enable PARS_MODE_BIN_LED
+                    // cmdParse calls CMD_LED, which will wait until a previous send on this channel is finished
                     // -----------------------------------------------------------
                     //  Switch to binary input mode
                     // -----------------------------------------------------------
@@ -623,9 +625,17 @@ int Cmd_LED(int argc, char *argv[]) {   //Here we need to switch the serialComma
                 return 0;
             }
 //            UARTprintf("Blasting %d bytes of data to LED string on channel %d\n", blobSize, channel);
-            g_LEDnBytesToCopy = blobSize;
-            g_LEDChannel = channel;
-            return PARS_MODE_BIN_LED;
+            //-------------------------
+            // Lock the SPI channel
+            //-------------------------
+            t_spiTransferState *state = &g_spiState[channel];
+            if( xSemaphoreTake( state->semaToReleaseWhenFinished, 30 ) ){
+                g_LEDnBytesToCopy = blobSize;   //We got the Lock, start copy process
+                g_LEDChannel = channel;
+                return PARS_MODE_BIN_LED;
+            } else {
+                UARTprintf("%22s: Timeout, could not access sendBuffer %d\n", "spiSend()", channel);
+            }
         } else {
             UARTprintf("%22s: Invalid LED channel (%d)\n", "Cmd_LED()", channel);
         }

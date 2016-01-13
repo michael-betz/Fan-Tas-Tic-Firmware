@@ -175,15 +175,20 @@ uint8_t *fillPiongBuffer( uint8_t *srcPointer, uint16_t *destPointer, int32_t *n
 }
 
 void spiISR( uint8_t channel ){
-    //Should only be called by uDMA interrupt after a block has been transferred! (takes 640 us)
+    //Is called by uDMA interrupt after one block has been transferred! (takes 640 us)
     //It takes < 50 us to refresh a buffer
     uint32_t temp;
     t_spiTransferState *state = &g_spiState[channel];
     temp = ROM_SSIIntStatus(state->baseAdr, 1);
     ROM_SSIIntClear(state->baseAdr, temp);
-    if( state->state == SPI_IDLE ){
+    // Check if all bytes have been transferred already
+    if( state->nLEDBytesLeft <= 0 || state->state == SPI_IDLE ){
+        state->state = SPI_IDLE;
+        xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
 //        UARTprintf("%22s: SPI_IDLE, Done! Ch %d\n", "spiISR()", channel);
         return;
+        // Disable SSI int ( else retrigger and faultISR :( )
+//        ROM_IntDisable( state->intNo );
     }
     // One DMA transfer is done if channel is disabled
     if( ROM_uDMAChannelIsEnabled(state->dmaChannel) ){
@@ -206,7 +211,7 @@ void spiISR( uint8_t channel ){
         //---------------------------------------------
         //Send PONG buffer, recharge PING buffer
         //---------------------------------------------
-        ASSERT( HWREG( state->baseAdr+SSI_O_SR) & SSI_SR_BSY );     //SPI is still transmitting (otherwise buffer underflow)
+        //ASSERT( HWREG( state->baseAdr+SSI_O_SR) & SSI_SR_BSY );     //SPI is still transmitting (otherwise buffer underflow)
         ROM_uDMAChannelTransferSet( state->dmaChannel | UDMA_PRI_SELECT,
                                        UDMA_MODE_BASIC, state->pongBuffer,
                                        (void *)(state->baseAdr + SSI_O_DR),
@@ -218,30 +223,32 @@ void spiISR( uint8_t channel ){
         UARTprintf("%22s: WTF! unknow state. Ch %d\n", "spiISR()", channel);
         ASSERT(0);
     }
-    // Check if all bytes have been transferred (still ongoing in background)
-    if( state->nLEDBytesLeft <= 0 ){
-        state->state = SPI_IDLE;
-        // Disable SSI int ( else retrigger and faultISR :( )
-//        ROM_IntDisable( state->intNo );
-        xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
-    }
 }
 
 void spiSend( uint8_t channel, int32_t nBytes ){
     uint8_t *srcPointer;
     t_spiTransferState *state = &g_spiState[channel];
-    if( xSemaphoreTake( state->semaToReleaseWhenFinished, 100 ) ){
+//    if( xSemaphoreTake( state->semaToReleaseWhenFinished, 100 ) ){
         //Need to init the PING buffer first
         srcPointer = g_spiBuffer[channel];
         srcPointer = fillPiongBuffer( srcPointer, state->pingBuffer, &nBytes );
+        srcPointer = fillPiongBuffer( srcPointer, state->pongBuffer, &nBytes );
         state->currentLEDByte = srcPointer;
         state->nLEDBytesLeft = nBytes;
-        //Start transmission of PING buffer in the ISR
-        state->state = SPI_SEND_PING;
-        // Artificially Trigger SSI interrupt here
-        IntTrigger( state->intNo );
-        // The ISR will send PING and refill PONG, etc.
-    } else {
-        UARTprintf("%22s: Timeout, could not access sendBuffer %d\n", "spiSend()", channel);
-    }
+        //Start transmission of PING buffer here
+        // ISR _may_ start transmission of PONG buffer
+        state->state = SPI_SEND_PONG;
+        //---------------------------------------------
+        //Send PING buffer, recharge PONG buffer
+        //---------------------------------------------
+        // Basic = One shot mode. Define source buffer and dest. register and number of data items
+        ROM_uDMAChannelTransferSet( state->dmaChannel | UDMA_PRI_SELECT,
+                                       UDMA_MODE_BASIC, state->pingBuffer,
+                                       (void *)(state->baseAdr + SSI_O_DR),
+                                       SPI_DMA_BUFFER_SIZE );
+        ROM_uDMAChannelEnable( state->dmaChannel );
+        // As soon as the first DMA is finished, the ISR will take over control
+//    } else {
+//        UARTprintf("%22s: Timeout, could not access sendBuffer %d\n", "spiSend()", channel);
+//    }
 }
