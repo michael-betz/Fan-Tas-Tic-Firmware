@@ -66,6 +66,7 @@ extern int Cmd_OUT(int argc, char *argv[]);
 extern int Cmd_RUL(int argc, char *argv[]);
 extern int Cmd_RULD(int argc, char *argv[]);
 extern int Cmd_RULE(int argc, char *argv[]);
+extern int Cmd_LEC(int argc, char *argv[]);
 extern int Cmd_LED(int argc, char *argv[]);
 extern int Cmd_I2C(int argc, char *argv[]);
 void usbReporter(void *pvParameters);

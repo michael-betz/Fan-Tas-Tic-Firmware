@@ -13,6 +13,7 @@
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
 #include "inc/hw_ints.h"
+#include "inc/hw_ssi.h"
 
 // FreeRTOS includes
 #include "FreeRTOSConfig.h"
@@ -61,10 +62,11 @@ tCmdLineEntry g_psCmdTable[] = {
         { "?",     Cmd_help, ": Display list of commands" },
         { "*IDN?", Cmd_IDN,  ": Display ID and version info" },
         { "SW?",   Cmd_SW,   ": Return the state of ALL switches (40 bytes)" },
-        { "OUT",   Cmd_OUT,  ": OUT <hwIndex> <tPulse> <PWMhigh> <PWMlow>\nOUT   : OUT <hwIndex> <PWMvalue>" },
+        { "OUT",   Cmd_OUT,  ": OUT <hwIndex> <PWMlow> <tPulse> <PWMhigh>\nOUT   : OUT <hwIndex> <PWMvalue>" },
         { "RUL",   Cmd_RUL,  ": RUL <ID> <IDin> <IDout> <trHoldOff> <tPulse>\n        <pwmOn> <pwmOff> <bPosEdge> <bAutoOff> <bLevelTr>" },
         { "RULE",  Cmd_RULE, ": Enable  a previously disabled rule: RULE <ID>" },
         { "RULD",  Cmd_RULD, ": Disable a previously defined rule:  RULD <ID>" },
+        { "LEC",   Cmd_LEC,  ": LEC <channel> <spiSpeed [Hz]> <frameFmt (opt)>" },
         { "LED",   Cmd_LED,  ": LED <channel> <nBytes>\\n<binary blob of nBytes>" },
         { "I2C",   Cmd_I2C,  ": I2C <channel> <I2Caddr> <sendData> <nBytesRx>" },
         { 0, 0, 0 } };
@@ -87,6 +89,7 @@ uint16_t strMyStrip(uint8_t *cmdString, uint16_t cmdLen) {
 void taskDemoLED(void *pvParameters) {
 // Flash the LEDs on the launchpad
 //    static char debugBuffer[256];
+//    uint8_t i;
     UARTprintf("%22s: %s", "taskDemoLED()", "Started!\n");
     while (1) {
         // Turn on LED 1
@@ -106,6 +109,12 @@ void taskDemoLED(void *pvParameters) {
         vTaskDelay(1000);
 //        vTaskGetRunTimeStats( debugBuffer );
 //        UARTprintf( "\033[2J%s", debugBuffer );
+//        if( xSemaphoreTake( g_spiState[0].semaToReleaseWhenFinished, 30 ) ){
+//            for( i=0 ; i<50*3; i++ ){
+//                g_spiBuffer[0][i] = i;
+//            }
+//            spiSend( 0, 50*3 );
+//        }
     }
 }
 
@@ -612,6 +621,38 @@ int Cmd_RUL(int argc, char *argv[]) {
     return CMDLINE_TOO_FEW_ARGS;
 }
 
+int Cmd_LEC(int argc, char *argv[]) {   //Here we need re - initialize the SPI module
+    //LEC <channel> <spiSpeed [Hz]> <SSI_FRF (opt)>"
+    uint8_t channel;
+    uint32_t baseAddr, spiSpeed, frameFmt=SSI_FRF_MOTO_MODE_1;
+    if( argc==3 || argc==4 ){
+        channel = ustrtoul(argv[1], NULL, 0);
+        if( channel<=2 ){
+            baseAddr = g_spiState[channel].baseAdr;
+        } else {
+            UARTprintf("%22s: Invalid LED channel (%d)\n", "Cmd_LEC()", channel);
+            return(0);
+        }
+        spiSpeed = ustrtoul(argv[2], NULL, 0);
+        if( argc == 4 ){
+            frameFmt = ustrtoul(argv[3], NULL, 0);
+        }
+        while( HWREG( baseAddr + SSI_O_SR ) & SSI_SR_BSY ){  //Wait for SPI to finish
+            vTaskDelay( 10 );
+        }
+        UARTprintf("%22s: Setting SPI to %d Hz, frameFmt = 0x%02x\n", "Cmd_LEC()", spiSpeed, frameFmt);
+        ROM_SSIDisable( baseAddr );
+        // SPI at 3.2 MHz, 16 bit SPI words (encoding 4 bit data each)
+        ROM_SSIConfigSetExpClk( baseAddr, SYSTEM_CLOCK, frameFmt, SSI_MODE_MASTER, spiSpeed, 16 );
+        ROM_SSIEnable( baseAddr );
+    } else {
+        return( CMDLINE_TOO_FEW_ARGS );
+    }
+
+    return(0);
+}
+
+
 int Cmd_LED(int argc, char *argv[]) {   //Here we need to switch the serialCommandParser to Binary mode
     //LED 0 128\nxxxxxx
     uint8_t channel;
@@ -629,7 +670,7 @@ int Cmd_LED(int argc, char *argv[]) {   //Here we need to switch the serialComma
             // Lock the SPI channel
             //-------------------------
             t_spiTransferState *state = &g_spiState[channel];
-            if( xSemaphoreTake( state->semaToReleaseWhenFinished, 30 ) ){
+            if( xSemaphoreTake( state->semaToReleaseWhenFinished, 1000 ) ){
                 g_LEDnBytesToCopy = blobSize;   //We got the Lock, start copy process
                 g_LEDChannel = channel;
                 return PARS_MODE_BIN_LED;

@@ -117,7 +117,7 @@ void spiHwSetup( uint8_t channel, uint32_t ssin_base, uint8_t intNo, uint32_t dm
     // USer internal 80 MHz clock
     ROM_SSIClockSourceSet( ssin_base, SSI_CLOCK_SYSTEM );
     // SPI at 3.2 MHz, 16 bit SPI words (encoding 4 bit data each)
-    ROM_SSIConfigSetExpClk( ssin_base, SYSTEM_CLOCK, SSI_FRF_MOTO_MODE_1, SSI_MODE_MASTER, 3200000, 16 );
+    ROM_SSIConfigSetExpClk( ssin_base, SYSTEM_CLOCK, SSI_FRF_MOTO_MODE_1, SSI_MODE_MASTER, 1600000, 16 );
     // Enable it
     ROM_SSIEnable( ssin_base );
     // Enable DMA
@@ -169,11 +169,22 @@ void spiSetup(){
     ROM_GPIOPinConfigure( GPIO_PB7_SSI2TX );     //SSI2
     ROM_GPIOPinConfigure( GPIO_PD3_SSI3TX );     //SSI3
 
+//   Try open drain config
+//    ROM_GPIODirModeSet(GPIO_PORTF_BASE, GPIO_PIN_1, GPIO_DIR_MODE_HW);
+//    ROM_GPIODirModeSet(GPIO_PORTB_BASE, GPIO_PIN_7, GPIO_DIR_MODE_HW);
+//    ROM_GPIODirModeSet(GPIO_PORTD_BASE, GPIO_PIN_3, GPIO_DIR_MODE_HW);
+//    ROM_GPIOPadConfigSet( GPIO_PORTF_BASE, GPIO_PIN_1, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_OD );
+//    ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_7, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_OD );
+//    ROM_GPIOPadConfigSet( GPIO_PORTD_BASE, GPIO_PIN_3, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_OD );
+
+//   Default push pull config
     ROM_GPIOPinTypeSSI(   GPIO_PORTF_BASE, GPIO_PIN_1 );
-//    ROM_GPIOPinTypeGPIOOutput( GPIO_PORTF_BASE, GPIO_PIN_1 );
-//    ROM_GPIOPinWrite( GPIO_PORTF_BASE, GPIO_PIN_1, 0xFF );
     ROM_GPIOPinTypeSSI(   GPIO_PORTB_BASE, GPIO_PIN_7 );
     ROM_GPIOPinTypeSSI(   GPIO_PORTD_BASE, GPIO_PIN_3 );
+
+//    ROM_GPIODirModeSet(GPIO_PORTF_BASE, GPIO_PIN_1, GPIO_DIR_MODE_HW);
+//    ROM_GPIOPadConfigSet( GPIO_PORTF_BASE, GPIO_PIN_1, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD );
+
     //---------------------------------------
     // Tivaware stuff
     //---------------------------------------
@@ -232,7 +243,7 @@ void spiISR( uint8_t channel ){
         //---------------------------------------------
         //Send PONG buffer, recharge PING buffer
         //---------------------------------------------
-        ASSERT( HWREG( state->baseAdr+SSI_O_SR) & SSI_SR_BSY );     //SPI is still transmitting (otherwise buffer underflow)
+//        ASSERT( HWREG( state->baseAdr+SSI_O_SR) & SSI_SR_BSY );     //SPI is still transmitting (otherwise buffer underflow)
         ROM_uDMAChannelTransferSet( state->dmaChannel | UDMA_PRI_SELECT,
                                        UDMA_MODE_BASIC, state->pongBuffer,
                                        (void *)(state->baseAdr + SSI_O_DR),
@@ -268,6 +279,7 @@ void spiISR( uint8_t channel ){
     // Check if a buffer recharge is neccesary
     if( state->nLEDBytesLeft <= 0 ){
         state->state = SPI_SEND_ZERO;    //Send 50 us of LOW to latch LEDs
+
     } else {
         // Otherwise refill the buffer
         state->currentLEDByte = fillPiongBuffer( state->currentLEDByte, bufferToRefill, &state->nLEDBytesLeft );

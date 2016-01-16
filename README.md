@@ -80,20 +80,26 @@ use the PCF GPIO extenders. To be seen.
 
 # Serial command API
 
+The Tiva board has two physical USB connectors. The `DEBUG` port is used to load and debug the firmware.
+It also provides a virtual serial port, which can be opened in a terminal to see status messages from
+the Fan-Tas-Tic firmware. This port is read-only. The `DEVICE` port provides a virtual serial port
+over which all the communication is handeled and where commands are sent to. This port supports 
+read and write.
+
         Available commands
         ------------------
         ?     : Display list of commands
         *IDN? : Display ID and version info
         SW?   : Return the state of ALL switches (40 bytes)
-        OUT   : OUT hwIndex tPulse PWMhigh PWMlow
-        OUT   : OUT hwIndex PWMvalue
-        RUL   : RUL ID IDin IDout trHoldOff tPulse
-                pwmOn pwmOff bPosEdge bAutoOff bLevelTr
-        RULE  : Enable  a previously disabled rule: RULE ID
-        RULD  : Disable a previously defined rule:  RULD ID
-        LED   : LED <channel> <nBytes>\n
-                <binary blob of nBytes>
-        I2C   : I2C <channel> <addr> <send data> <nBytesRx>
+        OUT   : OUT <hwIndex> <PWMlow> <tPulse> <PWMhigh>
+        OUT   : OUT <hwIndex> <PWMvalue>
+        RUL   : RUL <ID> <IDin> <IDout> <trHoldOff> <tPulse>
+                <pwmOn> <pwmOff> <bPosEdge> <bAutoOff> <bLevelTr>
+        RULE  : Enable  a previously disabled rule: RULE <ID>
+        RULD  : Disable a previously defined rule:  RULD <ID>
+        LEC   : LEC <channel> <spiSpeed [Hz]> <frameFmt (opt)>
+        LED   : LED <channel> <nBytes>\n<binary blob of nBytes>
+        I2C   : I2C <channel> <I2Caddr> <sendData> <nBytesRx>
 
 ## Switch events
 When a switch input flips its state, its hwIndex and new state is immediately reported on the USB serial port
@@ -207,6 +213,43 @@ Sent:
         \xFF\xFF\xFF\x7F\x00\x00
 
 Set the first two LEDs on channel 1. The first LED will glow white at full power, the second red at half power.
+
+## `LEC` configure the WS2811 data rate
+Set the output data-rate of the SPI module in bits / s.
+Note that 4 bits are needed to transmit 1 WS2811 `baud`.
+The WS2811 chip supports low speed (400 kBaud) and high speed (800 kBaud) mode. This setting is applied by
+the voltage level on a physical pin on the chip. The WS2812 LED only supports 800 kBaud mode.
+    
+    -------------------------
+     kBaud     spiSpeed [Hz]
+       400   =       1600000
+       800   =       3200000
+    -------------------------
+      
+This command allows the timing to be fine-tuned, to remove glitches.
+
+The second argument `frameFmt` is optional and allows to experiment with the SPI frame format. 
+Refer to the [TM4C1294 datasheet](http://www.ti.com/lit/gpn/tm4c123gh6pm) for details.
+
+    ---------------------------------------------
+     frameFmt    Description
+         0x00    Moto fmt, polarity 0, phase 0
+         0x02    Moto fmt, polarity 0, phase 1
+         0x01    Moto fmt, polarity 1, phase 0
+         0x03    Moto fmt, polarity 1, phase 1
+         0x10    TI frame format
+         0x20    National MicroWire frame format
+    ---------------------------------------------
+
+__Example__
+
+Sent:
+
+        LEC 0 1700000\n
+        
+Set the SPI speed of the first LED channel to 1.7 Mbit/s. 
+As 4 SPI bits encode 1 WS2811 clock period, the effective speed is 425 kBaud.         
+
 
 ## `I2C` do a custom I2C transaction
 This command does a send / receive transaction on one of the I2C busses. Use this to communicate with custom extension boards from python.
