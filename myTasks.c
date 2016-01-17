@@ -119,6 +119,9 @@ void taskDemoLED(void *pvParameters) {
 }
 
 int8_t cmdParse( uint8_t *charBuffer, uint16_t nCharsRead ){
+    if (nCharsRead == 0){   //This must be a \n, ignore silently
+        return( 0 );
+    }
     int8_t retVal = CmdLineProcess( (char*)charBuffer, nCharsRead );
     switch (retVal) {
      case CMDLINE_BAD_CMD:
@@ -175,18 +178,6 @@ void taskUsbCommandParser( void *pvParameters ) {
     uint8_t *readPointer = charBuffer;                          // Points to the next unprocessed character
     uint8_t *spiWritePointer;                                   // Points to first free place in spiBuffer
     t_usbParserMode currentMode = PARS_MODE_ASCII;
-//    for( tempCharsRead=0; tempCharsRead<1024*3; tempCharsRead++ ){
-//        g_spiBuffer[1][tempCharsRead] = 0x00;
-//    }
-//    spiSend( 1, 1024 );
-//    vTaskDelay( 1000 );
-//    while (1) {
-//        for( tempCharsRead=0; tempCharsRead<1024*3; tempCharsRead++ ){
-//            g_spiBuffer[1][tempCharsRead] = 0x01;
-//        }
-//        spiSend( 0, 1024 );
-//        spiSend( 1, 1024 );
-//    }
     while (1) {
         switch( currentMode ){
         case PARS_MODE_ASCII:
@@ -248,7 +239,7 @@ void taskUsbCommandParser( void *pvParameters ) {
                 remainderSize = 0;
                 if( nCharsRead >= CMD_PARSER_BUF_LEN - 1 ){
                     UARTprintf("%22s: %s", "taskUsbCommandParser()", "Command buffer overflow, try a shorter command!\n");
-                    while(1);
+                    ASSERT(0);
 //                    USBBufferFlush( &g_sRxBuffer );
 //                    writePointer = charBuffer;
 //                    nCharsRead = 0;
@@ -271,6 +262,7 @@ void taskUsbCommandParser( void *pvParameters ) {
             }
             if( nCharsRead >= g_LEDnBytesToCopy ){      //Are we good already?
                 spiSend( g_LEDChannel, g_LEDnBytesToCopy );
+//                xSemaphoreGive( g_spiState[g_LEDChannel].semaToReleaseWhenFinished );
                 nCharsRead = 0;
                 currentMode = PARS_MODE_ASCII;
             }

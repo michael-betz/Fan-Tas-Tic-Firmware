@@ -117,7 +117,7 @@ void spiHwSetup( uint8_t channel, uint32_t ssin_base, uint8_t intNo, uint32_t dm
     // USer internal 80 MHz clock
     ROM_SSIClockSourceSet( ssin_base, SSI_CLOCK_SYSTEM );
     // SPI at 3.2 MHz, 16 bit SPI words (encoding 4 bit data each)
-    ROM_SSIConfigSetExpClk( ssin_base, SYSTEM_CLOCK, SSI_FRF_MOTO_MODE_1, SSI_MODE_MASTER, 1600000, 16 );
+    ROM_SSIConfigSetExpClk( ssin_base, SYSTEM_CLOCK, SSI_FRF_MOTO_MODE_1, SSI_MODE_MASTER, 3200000, 16 );
     // Enable it
     ROM_SSIEnable( ssin_base );
     // Enable DMA

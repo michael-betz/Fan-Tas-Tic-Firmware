@@ -21,6 +21,7 @@
 // TivaWare includes
 #include "driverlib/rom.h"
 #include "driverlib/timer.h"
+#include "driverlib/pwm.h"
 #include "driverlib/pin_map.h"
 #include "driverlib/gpio.h"
 #include "driverlib/sysctl.h"
@@ -91,7 +92,7 @@ void vApplicationMallocFailedHook( void ){
 
 void ledOut( uint8_t ledVal ){
     // 0 = off, 1 = blue, 2 = green, 3 = blue & green
-    GPIOPinWrite( GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2, ledVal<<2 );
+    ROM_GPIOPinWrite( GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2, ledVal<<2 );
 }
 
 //-------------------------------------------------------------------------
@@ -116,8 +117,70 @@ void initGpio(){
     ROM_GPIOPinTypeUART(GPIO_PORTA_BASE, GPIO_PIN_0 | GPIO_PIN_1);
     // Configure DEVICE USB pins
     ROM_GPIOPinTypeUSBAnalog(GPIO_PORTD_BASE, GPIO_PIN_5 | GPIO_PIN_4);
+    // Init switch matrix shift register driving outputs
+    ROM_GPIODirModeSet( GPIO_PORTB_BASE, GPIO_PIN_1 | GPIO_PIN_0, GPIO_DIR_MODE_OUT);
+    ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_1 | GPIO_PIN_0, GPIO_STRENGTH_12MA, GPIO_PIN_TYPE_STD);
     // Enable the GPIO pins for the LED (PF2 & PF3).
     ROM_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2);
+}
+
+void initPWM(){
+    //--------------------------------
+    // Out    M0PWM2, 3,   6,   7
+    // On     PB4,    PB5, PC4, PC5
+    // With   PWM_GEN_1    PWM_GEN_3
+    //--------------------------------
+    // Enable PWM hardware
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_PWM0 );
+    ROM_SysCtlPeripheralReset(  SYSCTL_PERIPH_PWM0 );
+    ROM_SysCtlPWMClockSet( SYSCTL_PWMDIV_1 );           //PWM counter runs at 80 MHz
+    // Setup output pins
+    ROM_GPIOPinConfigure(GPIO_PB4_M0PWM2);
+    ROM_GPIOPinConfigure(GPIO_PB5_M0PWM3);
+    ROM_GPIOPinConfigure(GPIO_PC4_M0PWM6);
+    ROM_GPIOPinConfigure(GPIO_PC5_M0PWM7);
+    // Setup PIN type
+    ROM_GPIOPinTypePWM(  GPIO_PORTB_BASE, GPIO_PIN_4 );
+    ROM_GPIOPinTypePWM(  GPIO_PORTB_BASE, GPIO_PIN_5 );
+    ROM_GPIOPinTypePWM(  GPIO_PORTC_BASE, GPIO_PIN_4 );
+    ROM_GPIOPinTypePWM(  GPIO_PORTC_BASE, GPIO_PIN_5 );
+    // Configure the PWM generators for count down mode with immediate updates
+    ROM_PWMGenConfigure( PWM0_BASE, PWM_GEN_1, PWM_GEN_MODE_DOWN | PWM_GEN_MODE_NO_SYNC );
+    ROM_PWMGenConfigure( PWM0_BASE, PWM_GEN_3, PWM_GEN_MODE_DOWN | PWM_GEN_MODE_NO_SYNC );
+    // Set the period to 50 kHz. Max PWM value = 1600
+    ROM_PWMGenPeriodSet( PWM0_BASE, PWM_GEN_1, MAX_PWM );
+    ROM_PWMGenPeriodSet( PWM0_BASE, PWM_GEN_3, MAX_PWM );
+    // Set the pulse width for a 0% duty cycle.
+    ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_2, 0);
+    ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_3, 0);
+    ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_6, 0);
+    ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_7, 0);
+    // Start the timers
+    ROM_PWMGenEnable(    PWM0_BASE, PWM_GEN_1 );
+    ROM_PWMGenEnable(    PWM0_BASE, PWM_GEN_3 );
+    // Enable the outputs.
+    ROM_PWMOutputState(  PWM0_BASE, (PWM_OUT_2_BIT | PWM_OUT_3_BIT | PWM_OUT_6_BIT | PWM_OUT_7_BIT), true );
+}
+
+void setPwm( uint8_t channel, uint16_t pwmValue ){
+    // channel 0 ... 3,  pwmValue 0 ... MAX_PWM
+    if( pwmValue > MAX_PWM ){
+        return;
+    }
+    switch( channel ){
+    case 0:
+        ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_2, pwmValue);
+        break;
+    case 1:
+        ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_3, pwmValue);
+        break;
+    case 2:
+        ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_6, pwmValue);
+        break;
+    case 3:
+        ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_7, pwmValue);
+        break;
+    }
 }
 
 //-------------------------------------------------------------------------
@@ -135,10 +198,10 @@ int main(void) {
             " Hi, here's the brain of Fan-Tas-Tic Pinball V0.0 \n"
             "**************************************************\n\n");
 
-    configureTimer();   //Init HW timer for measuring processor cycles (%timeit)
+    configureTimer();   //Init debugh HW timer for measuring processor cycles (%timeit)
     initMyI2C();        //Init the 4 I2C hardware channels
     spiSetup();         //Init 3 SPI channels for setting ws2811 LEDs
-
+    initPWM();          //Init the 4 Hardware PWM output channels
     // Enable lazy stacking for interrupt handlers.  This allows floating-point
     // instructions to be used within interrupt handlers, but at the expense of
     // extra stack usage.

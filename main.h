@@ -15,10 +15,14 @@
 // System clock rate, 80 MHz
 #define SYSTEM_CLOCK    80000000U
 
+// Set PWM frequency to 50 kHz, which gives a maximum PWM value for 100 % of 1600
+#define MAX_PWM (SYSTEM_CLOCK/50000)
+
 void configureTimer();
 void startTimer();
 uint32_t stopTimer();
 uint32_t getTimer();
+void setPwm( uint8_t channel, uint16_t pwmValue );
 void ledOut( uint8_t ledVal );
 
 #endif /* FAN_TAS_TIC_CONTROLLER_MAIN_H_ */
