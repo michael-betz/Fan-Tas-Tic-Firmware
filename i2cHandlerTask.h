@@ -72,8 +72,8 @@ typedef struct {
 extern tI2CMInstance g_sI2CInst[4];
 
 // Buffer bits of current I2C GPIO input state
-extern t_switchStateConverter g_SwitchStateSampled;	//Read values of last I2C scan
-extern t_switchStateConverter g_SwitchStateDebounced;//Debounced values (the same after 4 reads)
+extern t_switchStateConverter g_SwitchStateSampled;	    //Read values of last I2C scan
+extern t_switchStateConverter g_SwitchStateDebounced;   //Debounced values (the same after 4 reads)
 extern t_switchStateConverter g_SwitchStateToggled;		//Bits which changed
 extern t_quickRule g_QuickRuleList[MAX_QUICK_RULES];	//List of Quickrules
 

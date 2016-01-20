@@ -291,10 +291,10 @@ void handleBitRules(t_PCLOutputByte *outListPtr, uint8_t dt) {
     uint8_t i;
     t_BitModifyRules *bitRules = outListPtr->bitRules;
     for (i = 0; i <= 7; i++) {
-        if (bitRules->tPulse > 0) {                                    //Is the entry valid?
+        if ( bitRules->tPulse > 0 ) {                                  //Is the entry valid?
             bitRules->tPulse -= dt;                                    //Apply dt timestep
-            if (bitRules->tPulse <= 0) {                               //Did the countdown expire?
-                setBcm(outListPtr->bcmBuffer, i, bitRules->lowPWM);    //Then apply the pulse_low bcm pattern
+            if ( bitRules->tPulse <= 0 ) {                             //Did the countdown expire?
+                setBcm( outListPtr->bcmBuffer, i, bitRules->lowPWM );  //Then apply the pulse_low bcm pattern
             }
         }
         bitRules++;
@@ -485,38 +485,37 @@ int Cmd_OUT(int argc, char *argv[]) {
     int32_t hwIndex;
     t_outputBit outLocation;
     uint16_t tPulse, pwmHigh, pwmLow;
-    if (argc == 3 || argc == 5) {
-        hwIndex = ustrtoul(argv[1], NULL, 0);
-        if (argc == 5) {
-            tPulse = ustrtoul(argv[3], NULL, 0);
-            pwmHigh = ustrtoul(argv[4], NULL, 0);
-            pwmLow = ustrtoul(argv[2], NULL, 0);
-        } else if (argc == 3) {
-            tPulse = 0;
-            pwmLow = ustrtoul(argv[2], NULL, 0);
-            pwmHigh = pwmLow;
-        }
-        if (pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM)) {
-            UARTprintf("Cmd_OUT(): PWMvalue must be < %d\n", (1 << N_BIT_PWM));
-            return 0;
-        }
-        outLocation = decodeHwIndex(hwIndex);
-        if (outLocation.hwIndexType == HW_INDEX_I2C) {
-            UARTprintf(
-                    "Cmd_OUT(): i2cCh %d, i2cAdr 0x%02x, bit %d = tp %d, pH %d, pL %d\n",
-                    outLocation.i2cChannel, outLocation.i2cAddress,
-                    outLocation.pinIndex, tPulse, pwmHigh, pwmLow);
-            setPclOutput(outLocation, tPulse, pwmHigh, pwmLow);
-            return (0);
-        } else if (outLocation.hwIndexType == HW_INDEX_SWM) {
-            UARTprintf("Cmd_OUT(): hwIndex=%d is a SM input\n", hwIndex);
-            return (0);
-        } else if (outLocation.hwIndexType == HW_INDEX_INVALID) {
-            UARTprintf("Cmd_OUT(): HW_INDEX_INVALID: %s\n", argv[1]);
-            return (0);
-        }
+    if (argc == 5) {
+        tPulse  = ustrtoul(argv[3], NULL, 0);
+        pwmHigh = ustrtoul(argv[4], NULL, 0);
+        pwmLow  = ustrtoul(argv[2], NULL, 0);
+    } else if (argc == 3) {
+        tPulse  = 0;
+        pwmLow  = ustrtoul(argv[2], NULL, 0);
+        pwmHigh = pwmLow;
+    } else {
+        return( CMDLINE_TOO_FEW_ARGS );
     }
-    return ( CMDLINE_TOO_FEW_ARGS);
+    hwIndex = ustrtoul(argv[1], NULL, 0);
+    if (pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM)) {
+        UARTprintf("Cmd_OUT(): PWMvalue must be < %d\n", (1 << N_BIT_PWM));
+        return 0;
+    }
+    outLocation = decodeHwIndex(hwIndex);
+    if (outLocation.hwIndexType == HW_INDEX_I2C) {
+        UARTprintf(
+                "Cmd_OUT(): i2cCh %d, i2cAdr 0x%02x, bit %d = tp %d, pH %d, pL %d\n",
+                outLocation.i2cChannel, outLocation.i2cAddress,
+                outLocation.pinIndex, tPulse, pwmHigh, pwmLow);
+        setPclOutput(outLocation, tPulse, pwmHigh, pwmLow);
+        return (0);
+    } else if (outLocation.hwIndexType == HW_INDEX_SWM) {
+        UARTprintf("Cmd_OUT(): hwIndex=%d is a SM input\n", hwIndex);
+        return (0);
+    } else if (outLocation.hwIndexType == HW_INDEX_INVALID) {
+        UARTprintf("Cmd_OUT(): HW_INDEX_INVALID: %s\n", argv[1]);
+        return (0);
+    }
 }
 
 int Cmd_RULE(int argc, char *argv[]) {

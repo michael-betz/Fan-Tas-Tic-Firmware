@@ -108,14 +108,14 @@ void initMyI2C() {
 
     // Enable weak internal pullups on the SCK pin.
     // Also disabes open drain so remove this once external pullups are in place
-    GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_2, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C0
-    GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_3, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
-    GPIOPadConfigSet( GPIO_PORTA_BASE, GPIO_PIN_6, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C1
-    GPIOPadConfigSet( GPIO_PORTA_BASE, GPIO_PIN_7, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
-    GPIOPadConfigSet( GPIO_PORTE_BASE, GPIO_PIN_4, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C2
-    GPIOPadConfigSet( GPIO_PORTE_BASE, GPIO_PIN_5, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
-    GPIOPadConfigSet( GPIO_PORTD_BASE, GPIO_PIN_0, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C3
-    GPIOPadConfigSet( GPIO_PORTD_BASE, GPIO_PIN_1, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
+    ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_2, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C0
+    ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_3, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
+    ROM_GPIOPadConfigSet( GPIO_PORTA_BASE, GPIO_PIN_6, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C1
+    ROM_GPIOPadConfigSet( GPIO_PORTA_BASE, GPIO_PIN_7, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
+    ROM_GPIOPadConfigSet( GPIO_PORTE_BASE, GPIO_PIN_4, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C2
+    ROM_GPIOPadConfigSet( GPIO_PORTE_BASE, GPIO_PIN_5, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
+    ROM_GPIOPadConfigSet( GPIO_PORTD_BASE, GPIO_PIN_0, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C3
+    ROM_GPIOPadConfigSet( GPIO_PORTD_BASE, GPIO_PIN_1, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
 
 // Enable loopbakc mode (without pullups and without loopback the driver will hang! :( )
 //    I2C0_MCR_R |= 0x01;
@@ -214,7 +214,7 @@ void i2cDoneCallback(void* pvCallbackData, uint_fast8_t ui8Status) {
 }
 
 // Reads out 1 byte from the address range 0x40 - 0x47 (where PCFL can be) from all 4 I2C channels.
-// Intterupt driven and runs in background. Writes to the global data and state arrays
+// Interrupt driven and runs in background. Writes to the global data and state arrays
 //    Finished when g_readCounter == 4*MAX_PCLS_PER_CHANNEL
 void i2cStartPCFL8574refresh() {
     uint8_t i;
@@ -405,6 +405,7 @@ void taskDebouncer(void *pvParameters) {
     }
     vTaskDelay( 250 );
     i2cStartPCFL8574refresh();
+    readSwitchMatrix();
     xLastWakeTime = xTaskGetTickCount();
     while (1) {
         if (ulTaskNotifyTake( pdTRUE, portMAX_DELAY)) {    // Wait for i2c scanner ISR to finish
