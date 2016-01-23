@@ -89,7 +89,7 @@ uint16_t strMyStrip(uint8_t *cmdString, uint16_t cmdLen) {
 void taskDemoLED(void *pvParameters) {
 // Flash the LEDs on the launchpad
 //    static char debugBuffer[256];
-//    uint8_t i;
+//    uint16_t i;
     UARTprintf("%22s: %s", "taskDemoLED()", "Started!\n");
     while (1) {
         // Turn on LED 1
@@ -497,6 +497,11 @@ int Cmd_OUT(int argc, char *argv[]) {
         return( CMDLINE_TOO_FEW_ARGS );
     }
     hwIndex = ustrtoul(argv[1], NULL, 0);
+    if( hwIndex >= 60 && hwIndex <= 63 ){   // Special case> hwIndex 60 - 63 is HW PWM
+        hwIndex -= 60;                      // hwIndex is now pwmChannel
+        setPwm( hwIndex, pwmLow );
+        return(0);
+    }
     if (pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM)) {
         UARTprintf("Cmd_OUT(): PWMvalue must be < %d\n", (1 << N_BIT_PWM));
         return 0;
@@ -510,12 +515,13 @@ int Cmd_OUT(int argc, char *argv[]) {
         setPclOutput(outLocation, tPulse, pwmHigh, pwmLow);
         return (0);
     } else if (outLocation.hwIndexType == HW_INDEX_SWM) {
-        UARTprintf("Cmd_OUT(): hwIndex=%d is a SM input\n", hwIndex);
+        UARTprintf("Cmd_OUT(): HW_INDEX_INVALID: %s\n", argv[1]);
         return (0);
     } else if (outLocation.hwIndexType == HW_INDEX_INVALID) {
         UARTprintf("Cmd_OUT(): HW_INDEX_INVALID: %s\n", argv[1]);
         return (0);
     }
+    return (0);
 }
 
 int Cmd_RULE(int argc, char *argv[]) {

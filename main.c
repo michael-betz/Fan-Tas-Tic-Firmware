@@ -14,6 +14,7 @@
 #include "inc/hw_timer.h"
 #include "inc/hw_gpio.h"
 #include "inc/hw_ints.h"
+#include "inc/hw_pwm.h"
 
 #include "sensorlib/i2cm_drv.h"
 #include "utils/uartstdio.h"
@@ -124,6 +125,25 @@ void initGpio(){
     ROM_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2);
 }
 
+myPWMGenConfigure(uint32_t ui32Base, uint32_t ui32Gen){
+    // Enable and configure one of the 4 PWM generators (2 PWM outputs each)
+    // Compute the generator's base address.
+    ui32Gen += ui32Base;
+    // Change the global configuration of the generator (PWMnCTL).
+    // Local sync. COunting down, enabled
+    //HWREG(ui32Gen + PWM_O_X_CTL) = PWM_X_CTL_DBFALLUPD_LS | PWM_X_CTL_DBRISEUPD_LS | PWM_X_CTL_DBCTLUPD_LS | PWM_X_CTL_GENBUPD_LS | PWM_X_CTL_GENAUPD_LS;
+    // set the 2 x PWM signal low on reload and high on compare match
+    HWREG(ui32Gen + PWM_O_X_GENA) = PWM_X_GENA_ACTCMPAD_ONE | PWM_X_GENA_ACTLOAD_ZERO;
+    HWREG(ui32Gen + PWM_O_X_GENB) = PWM_X_GENB_ACTCMPBD_ONE | PWM_X_GENB_ACTLOAD_ZERO;
+    // set the reload register (sets PWM frequency)
+    HWREG(ui32Gen + PWM_O_X_LOAD)  = MAX_PWM + 1;
+    // set pwm value to 0 (output never set high)
+    HWREG(ui32Gen + PWM_O_X_CMPA) = 0;
+    HWREG(ui32Gen + PWM_O_X_CMPB) = 0;
+    // Enable it
+    HWREG(ui32Gen + PWM_O_X_CTL) |= PWM_X_CTL_ENABLE;
+}
+
 void initPWM(){
     //--------------------------------
     // Out    M0PWM2, 3,   6,   7
@@ -144,43 +164,39 @@ void initPWM(){
     ROM_GPIOPinTypePWM(  GPIO_PORTB_BASE, GPIO_PIN_5 );
     ROM_GPIOPinTypePWM(  GPIO_PORTC_BASE, GPIO_PIN_4 );
     ROM_GPIOPinTypePWM(  GPIO_PORTC_BASE, GPIO_PIN_5 );
-    // Configure the PWM generators for count down mode with immediate updates
-    ROM_PWMGenConfigure( PWM0_BASE, PWM_GEN_1, PWM_GEN_MODE_DOWN | PWM_GEN_MODE_NO_SYNC );
-    ROM_PWMGenConfigure( PWM0_BASE, PWM_GEN_3, PWM_GEN_MODE_DOWN | PWM_GEN_MODE_NO_SYNC );
+    // Configure the PWM generators for count down mode
     // Set the period to 50 kHz. Max PWM value = 1600
-    ROM_PWMGenPeriodSet( PWM0_BASE, PWM_GEN_1, MAX_PWM );
-    ROM_PWMGenPeriodSet( PWM0_BASE, PWM_GEN_3, MAX_PWM );
-    // Set the pulse width for a 0% duty cycle.
-    ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_2, 0);
-    ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_3, 0);
-    ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_6, 0);
-    ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_7, 0);
-    // Start the timers
-    ROM_PWMGenEnable(    PWM0_BASE, PWM_GEN_1 );
-    ROM_PWMGenEnable(    PWM0_BASE, PWM_GEN_3 );
+    myPWMGenConfigure( PWM0_BASE, PWM_GEN_1 );
+    myPWMGenConfigure( PWM0_BASE, PWM_GEN_3 );
+    // Invert the outputs.
+    //HWREG( PWM0_BASE + PWM_O_INVERT ) = PWM_INVERT_PWM2INV | PWM_INVERT_PWM3INV | PWM_INVERT_PWM6INV | PWM_INVERT_PWM7INV;
     // Enable the outputs.
-    ROM_PWMOutputState(  PWM0_BASE, (PWM_OUT_2_BIT | PWM_OUT_3_BIT | PWM_OUT_6_BIT | PWM_OUT_7_BIT), true );
+    HWREG( PWM0_BASE + PWM_O_ENABLE ) = PWM_ENABLE_PWM2EN | PWM_ENABLE_PWM3EN | PWM_ENABLE_PWM6EN | PWM_ENABLE_PWM7EN;
 }
 
 void setPwm( uint8_t channel, uint16_t pwmValue ){
     // channel 0 ... 3,  pwmValue 0 ... MAX_PWM
+    uint32_t ui32Gen;
     if( pwmValue > MAX_PWM ){
         return;
     }
     switch( channel ){
     case 0:
-        ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_2, pwmValue);
+        ui32Gen = PWM_GEN_1 + PWM_O_X_CMPA;     //PWM2
         break;
     case 1:
-        ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_3, pwmValue);
+        ui32Gen = PWM_GEN_1 + PWM_O_X_CMPB;     //PWM3
         break;
     case 2:
-        ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_6, pwmValue);
+        ui32Gen = PWM_GEN_3 + PWM_O_X_CMPA;     //PWM6
         break;
     case 3:
-        ROM_PWMPulseWidthSet(PWM0_BASE, PWM_OUT_7, pwmValue);
+        ui32Gen = PWM_GEN_3 + PWM_O_X_CMPB;     //PWM7
         break;
+    default:
+        return;
     }
+    HWREG( PWM0_BASE + ui32Gen ) = pwmValue;
 }
 
 //-------------------------------------------------------------------------
