@@ -177,9 +177,9 @@ void initPWM(){
 void setPwm( uint8_t channel, uint16_t pwmValue ){
     // channel 0 ... 3,  pwmValue 0 ... MAX_PWM
     uint32_t ui32Gen;
-    if( pwmValue > MAX_PWM ){
-        return;
-    }
+//    if( pwmValue > MAX_PWM ){
+//        return;
+//    }
     switch( channel ){
     case 0:
         ui32Gen = PWM_GEN_1 + PWM_O_X_CMPA;     //PWM2

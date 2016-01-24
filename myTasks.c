@@ -1,8 +1,9 @@
 /*
  * tasks.c
- *
- * FreeRTOS tasks running in parallel
- * Here is most of the functionality of the pinball controller
+ * FreeRTOS tasks running in parallel (`threads`)
+
+ * This file mostly contains Functions for the communicating
+ * with the host PC, which includes parsing and executing commands.
  *
  *  Created on: Dec 22, 2015
  *      Author: michael
@@ -46,17 +47,19 @@
 #include "mySpi.h"
 #include "i2cHandlerTask.h"
 
-// Global vars
-t_PCLOutputByte g_outWriterList[OUT_WRITER_LIST_LEN];   // A list to keep track of the state of all output pins
+//*****************************************************************************
+// Global vars.
+//*****************************************************************************
+// Stuff for synchronizing TI I2C driver with freeRtos `do custom I2C transaction` task
 TaskHandle_t g_customI2cTask = NULL;
 SemaphoreHandle_t g_MutexCustomI2C = NULL;
 uint16_t g_customI2CnBytesRx;
 uint8_t g_customI2CrxBuffer[CUSTOM_I2C_BUF_LEN];
 uint8_t g_customI2Cstate;
 
-//-----------------------
+//*****************************************************************************
 // Command parser
-//-----------------------
+//*****************************************************************************
 // This is the table that holds the command names, implementing functions, and brief description.
 tCmdLineEntry g_psCmdTable[] = {
         { "?",     Cmd_help, ": Display list of commands" },
@@ -70,6 +73,11 @@ tCmdLineEntry g_psCmdTable[] = {
         { "LED",   Cmd_LED,  ": LED <channel> <nBytes>\\n<binary blob of nBytes>" },
         { "I2C",   Cmd_I2C,  ": I2C <channel> <I2Caddr> <sendData> <nBytesRx>" },
         { 0, 0, 0 } };
+
+
+//*****************************************************************************
+// Functions
+//*****************************************************************************
 
 uint16_t strMyStrip(uint8_t *cmdString, uint16_t cmdLen) {
     //Remove \n, \r and make sure there is a \0 at the end
@@ -274,132 +282,6 @@ void taskUsbCommandParser( void *pvParameters ) {
     }
 }
 
-void setBcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue) {
-    // Pre calculate and SET the values which need to be output on a pin to get
-    // Binary Code Modulation (BCM) with a certain power level.
-    uint8_t j;
-    taskENTER_CRITICAL();
-    for (j = 0; j < N_BIT_PWM; j++) {
-        HWREGBITB( bcmBuffer, pin ) = HWREGBITB(&pwmValue, j);
-        bcmBuffer++;
-    }
-    taskEXIT_CRITICAL();
-}
-
-void handleBitRules(t_PCLOutputByte *outListPtr, uint8_t dt) {
-    // Handle the switchover from `Pulsed` state to `unpulsed` state for each output pin
-    uint8_t i;
-    t_BitModifyRules *bitRules = outListPtr->bitRules;
-    for (i = 0; i <= 7; i++) {
-        if ( bitRules->tPulse > 0 ) {                                  //Is the entry valid?
-            bitRules->tPulse -= dt;                                    //Apply dt timestep
-            if ( bitRules->tPulse <= 0 ) {                             //Did the countdown expire?
-                setBcm( outListPtr->bcmBuffer, i, bitRules->lowPWM );  //Then apply the pulse_low bcm pattern
-            }
-        }
-        bitRules++;
-    }
-}
-
-void taskPCLOutWriter(void *pvParameters) {
-    // Dispatch I2C write commands to PCL GPIO extenders every 1 ms
-    // Use binary code modulation for N bit PWM
-    UARTprintf("%22s: %s", "taskPCLOutWriter()", "Started!\n");
-    uint8_t i, j, lastTickCount = 0;
-    uint8_t bcmCycleCounter = 0;    //Which bit to output
-//    uint32_t c = 0, ticks;
-    TickType_t xLastWakeTime;
-    t_PCLOutputByte *outListPtr = g_outWriterList;
-//    -------------------------------------------------------
-//    Init Data structure for caching the output values
-//    -------------------------------------------------------
-    for (i = 0; i < OUT_WRITER_LIST_LEN; i++) {
-        for (j = 0; j < N_BIT_PWM; j++) {
-            outListPtr->bcmBuffer[j] = 0xFF;    //Set all bits by default
-        }
-        outListPtr->i2cChannel = -1;            //This marks the entry as invalid
-        outListPtr++;
-    }
-    xLastWakeTime = xTaskGetTickCount();
-    while (1) {
-        //------------------------------------------------------------------
-        // This loop does binary code modulation
-        // It executes periodically with increasing delay (d) like this:
-        // d=1, d=2, d=4, d=8, d=1, ...
-        //------------------------------------------------------------------
-        outListPtr = g_outWriterList;
-        for (i = 0; i < OUT_WRITER_LIST_LEN; i++) {
-            if (outListPtr->i2cChannel < 0) {
-                //This and all further entries in the array are invalid items.
-                break;
-            } else {
-                //A valid item, simply output the current bcm buffer value over I2C
-                ts_i2cTransfer(outListPtr->i2cChannel, outListPtr->i2cAddress,
-                        &outListPtr->bcmBuffer[bcmCycleCounter], 1, NULL, 0,
-                        NULL, NULL);
-                handleBitRules(outListPtr, lastTickCount);
-            }
-            outListPtr++;
-        }
-        //---------------------------------
-        // Measure ticks for profiling
-        //---------------------------------
-//        ticks = stopTimer();
-//        c++;
-//        if (c >= 3000) {
-//            c = 0;
-//            UARTprintf("%22s: %d ticks\n", "taskPCLOutWriter()", ticks);
-//        }
-        //-----------------------------------------
-        // Delay until next bit needs to be output
-        //-----------------------------------------
-        // SET0, 1 ms, SET1, 2 ms, SET2, 4 ms, SET3, 8 ms, repeat
-        lastTickCount = (1 << bcmCycleCounter);
-        vTaskDelayUntil(&xLastWakeTime, lastTickCount);
-//        startTimer();
-        bcmCycleCounter++;
-        if (bcmCycleCounter >= N_BIT_PWM) {
-            bcmCycleCounter = 0;
-        }
-    }
-}
-
-void setPclOutput(t_outputBit outLocation, int16_t tPulse, uint8_t highPower, uint8_t lowPower) {
-// Set the power level and pulse settings of an output pin
-//    tPulse    = duration of the pulse [ms]
-//    highPower = PWM value during the pulse
-//    lowPower  = PWM value after  the pulse
-    uint8_t i;
-    t_PCLOutputByte *outListPtr = g_outWriterList;
-    t_BitModifyRules *bitRules;
-    if (outLocation.hwIndexType != HW_INDEX_I2C)
-        return;
-    for (i = 0; i < OUT_WRITER_LIST_LEN; i++) {
-        if (outListPtr->i2cChannel == -1) {
-//            Create new entry!
-            bitRules = &outListPtr->bitRules[outLocation.pinIndex];
-            bitRules->tPulse = tPulse;
-            bitRules->lowPWM = lowPower;
-            outListPtr->i2cAddress = outLocation.i2cAddress;
-            setBcm(outListPtr->bcmBuffer, outLocation.pinIndex, highPower);
-            outListPtr->i2cChannel = outLocation.i2cChannel;//Mark the item as valid to the output routine
-            return;
-        } else if (outListPtr->i2cChannel == outLocation.i2cChannel
-                && outListPtr->i2cAddress == outLocation.i2cAddress) {
-//            Found the right byte, change it
-            bitRules = &outListPtr->bitRules[outLocation.pinIndex];
-            bitRules->lowPWM = lowPower;
-            setBcm(outListPtr->bcmBuffer, outLocation.pinIndex, highPower);
-            bitRules->tPulse = tPulse;
-            return;
-        }
-        outListPtr++;
-    }
-//    Error, no more space in outList :(
-    UARTprintf("%22s: Error, no more space in g_outWriterList :(\n",
-            "setPclOutput()");
-}
-
 void ts_usbSend(uint8_t *data, uint16_t len) {
 //    Do a thread safe USB TX transfer in background (add data to USB send buffer)
     uint32_t freeSpace;
@@ -413,29 +295,6 @@ void ts_usbSend(uint8_t *data, uint16_t len) {
                 "ts_usbSend()", len, freeSpace);
     }
     taskEXIT_CRITICAL();
-}
-
-t_outputBit decodeHwIndex(uint16_t hwIndex) {
-// Decode a hwIndex and fill the t_outputBit structure with details
-// Meaning of byteIndex:  HW_INDEX_SWM: column,  HW_INDEX_I2Cn: right shited I2C address
-    int16_t i2cCh;
-    t_outputBit tempResult;
-    tempResult.byteIndex = hwIndex / 8;
-    tempResult.pinIndex = hwIndex % 8;    // Which bit of the byte is addressed
-    tempResult.i2cChannel = -1;
-    if (tempResult.byteIndex <= 7) {// byteIndex 0 - 7 are Switch Matrix addresses
-        tempResult.hwIndexType = HW_INDEX_SWM;
-        return tempResult;
-    }
-    i2cCh = (tempResult.byteIndex - 8) / 8;    // Only i2c channel 0-3 exists
-    if (i2cCh <= 3) {
-        tempResult.hwIndexType = HW_INDEX_I2C;
-        tempResult.i2cChannel = i2cCh;//I2C address, each channel has address 0x40 - 0x47
-        tempResult.i2cAddress = (tempResult.byteIndex - 8) % 8 + 0x40;
-        return tempResult;
-    }
-    tempResult.hwIndexType = HW_INDEX_INVALID;
-    return tempResult;
 }
 
 // This function implements the "help" command.  It prints a simple list of the available commands with a brief description.
@@ -497,29 +356,43 @@ int Cmd_OUT(int argc, char *argv[]) {
         return( CMDLINE_TOO_FEW_ARGS );
     }
     hwIndex = ustrtoul(argv[1], NULL, 0);
-    if( hwIndex >= 60 && hwIndex <= 63 ){   // Special case> hwIndex 60 - 63 is HW PWM
-        hwIndex -= 60;                      // hwIndex is now pwmChannel
-        setPwm( hwIndex, pwmLow );
-        return(0);
+    if( hwIndex >= 60 && hwIndex <= 63 ){        // Special case: hwIndex 60 - 63 are HW PWM outputs
+        outLocation.hwIndexType = HW_INDEX_HWPWM;// Note: only pinIndex is valid. Identifies the HW pwmChannel!
+        outLocation.pinIndex = hwIndex - 60;
+        outLocation.i2cAddress = 0;
+        outLocation.i2cChannel = 100;            // I2C channel 100 is reserved for HW PWM
+    } else {                                     // We only have valid pwmValues from 0-15 for I2C.
+        outLocation = decodeHwIndex(hwIndex);
     }
-    if (pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM)) {
-        UARTprintf("Cmd_OUT(): PWMvalue must be < %d\n", (1 << N_BIT_PWM));
-        return 0;
-    }
-    outLocation = decodeHwIndex(hwIndex);
-    if (outLocation.hwIndexType == HW_INDEX_I2C) {
-        UARTprintf(
-                "Cmd_OUT(): i2cCh %d, i2cAdr 0x%02x, bit %d = tp %d, pH %d, pL %d\n",
-                outLocation.i2cChannel, outLocation.i2cAddress,
-                outLocation.pinIndex, tPulse, pwmHigh, pwmLow);
+    switch( outLocation.hwIndexType ){
+    case HW_INDEX_I2C:
+        if (pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM)) {
+            UARTprintf("Cmd_OUT(): I2C PWMvalue must be < %d\n", (1 << N_BIT_PWM));
+            return 0;
+        }
+        UARTprintf("Cmd_OUT(): i2cCh %d, i2cAdr 0x%02x, bit %d = tp %d, pH %d, pL %d\n", outLocation.i2cChannel, outLocation.i2cAddress, outLocation.pinIndex, tPulse, pwmHigh, pwmLow);
         setPclOutput(outLocation, tPulse, pwmHigh, pwmLow);
-        return (0);
-    } else if (outLocation.hwIndexType == HW_INDEX_SWM) {
+        return(0);
+
+    case HW_INDEX_HWPWM:
+        if ( pwmHigh > MAX_PWM || pwmLow > MAX_PWM ) {
+            UARTprintf("Cmd_OUT(): HW PWMvalue must be <= %d\n", MAX_PWM);
+            return(0);
+        }
+        UARTprintf("Cmd_OUT(): HW_PWM_CH %d, tp %d, pH %d, pL %d\n", outLocation.pinIndex, tPulse, pwmHigh, pwmLow);
+        setPclOutput(outLocation, tPulse, pwmHigh, pwmLow);
+        return(0);
+
+    case HW_INDEX_SWM:
         UARTprintf("Cmd_OUT(): HW_INDEX_INVALID: %s\n", argv[1]);
         return (0);
-    } else if (outLocation.hwIndexType == HW_INDEX_INVALID) {
+
+    case HW_INDEX_INVALID:
         UARTprintf("Cmd_OUT(): HW_INDEX_INVALID: %s\n", argv[1]);
         return (0);
+
+    default:
+        ASSERT(0);
     }
     return (0);
 }

@@ -31,17 +31,29 @@
 #include "myTasks.h"
 #include "i2cHandlerTask.h"
 
-//-------------------------
+//*****************************************************************************
 // Global vars.
-//-------------------------
-tI2CMInstance g_sI2CInst[4];                         //Four I2C driver instances for 4 channels
-static TaskHandle_t xTaskToNotifyI2CscanDone = NULL; //Task to notify once i2c scan is done
-uint8_t g_i2cReadStates[4][MAX_PCLS_PER_CHANNEL];    //Error codes of last I2C scan
+//*****************************************************************************
+tI2CMInstance g_sI2CInst[4];                         //Four TI I2C driver instances for 4 I2C channels
+
+// I2C driver streams input state data into the below arrays
+uint8_t g_i2cReadStates[4][MAX_PCLS_PER_CHANNEL];    //All Error codes of last I2C scan
 t_switchStateConverter g_SwitchStateSampled;         //Read values of last I2C scan
 t_switchStateConverter g_SwitchStateDebounced;       //Debounced values (the same after 4 reads)
 t_switchStateConverter g_SwitchStateToggled;         //Bits which changed
-t_quickRule g_QuickRuleList[MAX_QUICK_RULES];        //List of Quickrules
+
+// Stuff for synchronizing TI I2C driver with freeRtos `read inputs` task
 volatile uint8_t g_readCounter = 0;                  // I2C read finished when g_readCounter == 4*MAX_PCLS_PER_CHANNEL
+static TaskHandle_t xTaskToNotifyI2CscanDone = NULL; //send freeRtos task notification there once i2c scan is done
+
+// Arrays to keep track of timed output pin states and quick-fire rules
+t_quickRule g_QuickRuleList[MAX_QUICK_RULES];        //List of Quick fire rules
+t_PCLOutputByte g_outWriterList[OUT_WRITER_LIST_LEN];// A list to keep track of the pulse state of all I2C output pins ever written to
+
+
+//*****************************************************************************
+// Functions
+//*****************************************************************************
 
 void i2CIntHandler0(void) {
     I2CMIntHandler(&g_sI2CInst[0]);
@@ -254,6 +266,9 @@ void debounceAlgo(uint32_t *sample, uint32_t *state, uint32_t *toggle) {
 }
 
 void reportSwitchStates() {
+    // FREERTOS will crash when REPORT_SWITCH_BUF_SIZE > 400, why?
+    // --> as during the context switch it copies the whole thing on the stack :p
+    // Now we use static to make all large buffers invisible to the context switcher
     static char outBuffer[REPORT_SWITCH_BUF_SIZE];
     // Report changed switch states
     uint8_t i, j, switchValue;
@@ -394,7 +409,7 @@ void setupQuickRule(uint8_t id, t_outputBit inputSwitchId,
 }
 
 void taskDebouncer(void *pvParameters) {
-//    We will get the state of all switches every 3 ms
+//    Read the state of all switches every 3 ms
 //    Then we need to debounce each switch and send `state changed` events
 //    uint32_t ticks;
     TickType_t xLastWakeTime;
@@ -403,7 +418,7 @@ void taskDebouncer(void *pvParameters) {
     for (i = 0; i < MAX_QUICK_RULES; i++) {
         disableQuickRule(i);
     }
-    vTaskDelay( 250 );
+    vTaskDelay( 1 );
     i2cStartPCFL8574refresh();
     readSwitchMatrix();
     xLastWakeTime = xTaskGetTickCount();
@@ -417,7 +432,7 @@ void taskDebouncer(void *pvParameters) {
 //            ticks = stopTimer();
 //            UARTprintf("readSwitchMatrix() %d ticks\n", ticks );
             //Run every 3 ms (333 Hz) --> 12 ms debounce latency
-            vTaskDelayUntil(&xLastWakeTime, 10);
+            vTaskDelayUntil(&xLastWakeTime, 3);
 //            startTimer();
             //Start background I2C scanner (takes ~ 600 us)
             i2cStartPCFL8574refresh();
@@ -425,4 +440,167 @@ void taskDebouncer(void *pvParameters) {
             readSwitchMatrix();
         }
     }
+}
+
+//------------------------------------------------------
+// Functios to _WRITE_ to outputs
+//------------------------------------------------------
+t_outputBit decodeHwIndex(uint16_t hwIndex) {
+// Decode a hwIndex and fill the t_outputBit structure with details
+// Meaning of byteIndex:  HW_INDEX_SWM: column,  HW_INDEX_I2Cn: right shited I2C address
+    int16_t i2cCh;
+    t_outputBit tempResult;
+    tempResult.byteIndex = hwIndex / 8;
+    tempResult.pinIndex = hwIndex % 8;    // Which bit of the byte is addressed
+    tempResult.i2cChannel = -1;
+    if (tempResult.byteIndex <= 7) {// byteIndex 0 - 7 are Switch Matrix addresses
+        tempResult.hwIndexType = HW_INDEX_SWM;
+        return tempResult;
+    }
+    i2cCh = (tempResult.byteIndex - 8) / 8;    // Only i2c channel 0-3 exists
+    if (i2cCh <= 3) {
+        tempResult.hwIndexType = HW_INDEX_I2C;
+        tempResult.i2cChannel = i2cCh;//I2C address, each channel has address 0x40 - 0x47
+        tempResult.i2cAddress = (tempResult.byteIndex - 8) % 8 + 0x40;
+        return tempResult;
+    }
+    tempResult.hwIndexType = HW_INDEX_INVALID;
+    return tempResult;
+}
+
+void setBcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue) {
+    // Pre calculate and SET the values which need to be output on a pin to get
+    // Binary Code Modulation (BCM) with a certain power level.
+    uint8_t j;
+    taskENTER_CRITICAL();
+    for (j = 0; j < N_BIT_PWM; j++) {
+        HWREGBITB( bcmBuffer, pin ) = HWREGBITB(&pwmValue, j);
+        bcmBuffer++;
+    }
+    taskEXIT_CRITICAL();
+}
+
+void handleBitRules( t_PCLOutputByte *outListPtr, uint8_t dt ) {
+    // Handle the switchover from `Pulsed` state to `unpulsed` state for each output pin
+    uint8_t i;
+    t_BitModifyRules *bitRules = outListPtr->bitRules;
+    for (i = 0; i <= 7; i++) {
+        if ( bitRules->tPulse > 0 ) {                                  //Is the entry valid?
+            bitRules->tPulse -= dt;                                    //Apply dt timestep
+            if ( bitRules->tPulse <= 0 ) {                             //Did the countdown expire?
+                if( outListPtr->i2cChannel == 100 ){                   // 100 = magic number meaning we need to set a HW PWM channel
+                    setPwm( i, bitRules->lowPWM );                     // Apply low HW pwm
+                } else {
+                    setBcm( outListPtr->bcmBuffer, i, bitRules->lowPWM );//Then apply the I2C pulse_low bcm pattern
+                }
+            }
+        }
+        bitRules++;
+    }
+}
+
+void taskPCLOutWriter(void *pvParameters) {
+    // Dispatch I2C write commands to PCL GPIO extenders periodically
+    // Use binary code modulation for N bit PWM
+    UARTprintf("%22s: %s", "taskPCLOutWriter()", "Started!\n");
+    uint8_t i, j, lastTickCount = 0;
+    uint8_t bcmCycleCounter = 0;    //Which bit to output
+//    uint32_t c = 0, ticks;
+    TickType_t xLastWakeTime;
+    t_PCLOutputByte *outListPtr = g_outWriterList;
+//    -------------------------------------------------------
+//    Init Data structure for caching the output values
+//    -------------------------------------------------------
+    for (i = 0; i < OUT_WRITER_LIST_LEN; i++) {
+        for (j = 0; j < N_BIT_PWM; j++) {
+            outListPtr->bcmBuffer[j] = 0xFF;    //Set all bits by default
+        }
+        outListPtr->i2cChannel = -1;            //This marks the entry as invalid
+        outListPtr++;
+    }
+    xLastWakeTime = xTaskGetTickCount();
+    while (1) {
+        //------------------------------------------------------------------
+        // This loop does binary code modulation
+        // It executes periodically with increasing delay (d) like this:
+        // d=1, d=2, d=4, d=8, d=1, ...
+        //------------------------------------------------------------------
+        outListPtr = g_outWriterList;
+        for (i = 0; i < OUT_WRITER_LIST_LEN; i++) {
+            if (outListPtr->i2cChannel < 0) {
+                //This and all further entries in the array are invalid items.
+                break;
+            } else if ( outListPtr->i2cChannel <= 3 ) {
+                //A valid item, simply output the current bcm buffer value over I2C
+                ts_i2cTransfer(outListPtr->i2cChannel, outListPtr->i2cAddress,
+                        &outListPtr->bcmBuffer[bcmCycleCounter], 1, NULL, 0,
+                        NULL, NULL);
+            }
+            handleBitRules(outListPtr, lastTickCount);
+            outListPtr++;
+        }
+        //---------------------------------
+        // Measure ticks for profiling
+        //---------------------------------
+//        ticks = stopTimer();
+//        c++;
+//        if (c >= 3000) {
+//            c = 0;
+//            UARTprintf("%22s: %d ticks\n", "taskPCLOutWriter()", ticks);
+//        }
+        //-----------------------------------------
+        // Delay until next bit needs to be output
+        //-----------------------------------------
+        // SET0, 1 ms, SET1, 2 ms, SET2, 4 ms, SET3, 8 ms, repeat
+        lastTickCount = (1 << bcmCycleCounter);
+        vTaskDelayUntil(&xLastWakeTime, lastTickCount);
+//        startTimer();
+        bcmCycleCounter++;
+        if (bcmCycleCounter >= N_BIT_PWM) {
+            bcmCycleCounter = 0;
+        }
+    }
+}
+
+void setPclOutput(t_outputBit outLocation, int16_t tPulse, uint16_t highPower, uint16_t lowPower) {
+// Set the power level and pulse settings of an output pin
+//    tPulse    = duration of the pulse [ms]
+//    highPower = PWM value during the pulse
+//    lowPower  = PWM value after  the pulse
+    uint8_t i;
+    t_PCLOutputByte *outListPtr = g_outWriterList;
+    t_BitModifyRules *bitRules;
+    if ( !(outLocation.hwIndexType==HW_INDEX_I2C||outLocation.hwIndexType==HW_INDEX_HWPWM) )
+        return;
+    for (i = 0; i < OUT_WRITER_LIST_LEN; i++) {
+        if (outListPtr->i2cChannel == -1) {
+//            Create new entry!
+            bitRules = &outListPtr->bitRules[outLocation.pinIndex];
+            bitRules->tPulse = tPulse;
+            bitRules->lowPWM = lowPower;
+            outListPtr->i2cAddress = outLocation.i2cAddress;
+            if( outLocation.hwIndexType == HW_INDEX_I2C ){
+                setBcm(outListPtr->bcmBuffer, outLocation.pinIndex, highPower);
+            } else if ( outLocation.hwIndexType == HW_INDEX_HWPWM ){
+                setPwm( outLocation.pinIndex, highPower );
+            }
+            outListPtr->i2cChannel = outLocation.i2cChannel;//Mark the item as valid to the output routine
+            return;
+        } else if (outListPtr->i2cChannel == outLocation.i2cChannel
+                && outListPtr->i2cAddress == outLocation.i2cAddress) {
+//            Found the right byte, change it
+            bitRules = &outListPtr->bitRules[outLocation.pinIndex];
+            bitRules->lowPWM = lowPower;
+            if( outLocation.hwIndexType == HW_INDEX_I2C ){
+                setBcm(outListPtr->bcmBuffer, outLocation.pinIndex, highPower);
+            } else if ( outLocation.hwIndexType == HW_INDEX_HWPWM ){
+                setPwm( outLocation.pinIndex, highPower );
+            }
+            bitRules->tPulse = tPulse;
+            return;
+        }
+        outListPtr++;
+    }
+//    Error, no more space in outList :(
+    UARTprintf("%22s: Error, no more space in g_outWriterList :(\n", "setPclOutput()");
 }
