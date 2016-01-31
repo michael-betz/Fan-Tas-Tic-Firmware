@@ -51,18 +51,18 @@ not all addresses will be valid.
         ---------------------------------
          0 - 63  --> Switch matrix inputs on mainboard
        [ 64 - 71 --> I2C Solenoid driver on mainboard  NOT AN INPUT! ]
-         72 - 79 --> I2Cch. 0, I2Cadr. 0x41, bit 0-7  (First  external PCL GPIO extender on channel 0)
-         80 - 87 --> I2Cch. 0, I2Cadr. 0x42, bit 0-7  (Second external PCL GPIO extender on channel 0)
-         312-319 --> I2Cch. 3, I2Cadr. 0x47, bit 0-7  (7th    external PCL GPIO extender on channel 3)
+         72 - 79 --> I2Cch. 0, I2Cadr. 0x21, bit 0-7  (First  external PCL GPIO extender on channel 0)
+         80 - 87 --> I2Cch. 0, I2Cadr. 0x22, bit 0-7  (Second external PCL GPIO extender on channel 0)
+         312-319 --> I2Cch. 3, I2Cadr. 0x27, bit 0-7  (7th    external PCL GPIO extender on channel 3)
 
 ### Calculating the hwIndex for the Switch matrix
         hwIndex = SMrow * 8 + SMcol
 where SMrow is the row wire number (from 0-7) and SMcol is the column wire number (from 0-7).
 
 ### Calculating the hwIndex for I2C inputs
-        hwIndex = 64 + I2Cchannel * 64 + ( I2Cadr - 64 ) * 8 + PinIndex
+        hwIndex = 64 + I2Cchannel * 64 + ( I2Cadr - 32 ) * 8 + PinIndex
  where I2Cchannel is the output channel on the mainboard (from 0-3), I2Cadr is the configured I2C address
- set by dip switches on the port extender (0x40 - 0x47) and PinIndex is the output pin (0-7).
+ set by dip switches on the port extender (0x20 - 0x27) and PinIndex is the output pin (0-7).
  
 ### What about I2C outputs 
 Output extension boards (solenoid driver / digital outputs / etc.) also use the PCF8574 I2C chip and hence the same
