@@ -292,8 +292,9 @@ void ts_usbSend(uint8_t *data, uint16_t len) {
     if (freeSpace >= len) {
         USBBufferWrite(&g_sTxBuffer, data, len);
     } else {
-        UARTprintf("%22s: Not enough space in USB TX buffer! Need %d have %d\n",
+        UARTprintf("%22s: Not enough space in USB TX buffer! Need %d have %d. <FLUSH>\n",
                 "ts_usbSend()", len, freeSpace);
+        USBBufferFlush( &g_sTxBuffer );
     }
     taskEXIT_CRITICAL();
 }
@@ -628,6 +629,10 @@ int Cmd_I2C(int argc, char *argv[]) {
     uint16_t nBytesTx, temp;
     if ( argc == 5 ){
         channel  = ustrtoul(argv[1], NULL, 0);
+        if ( channel > 3 ){
+            UARTprintf("%22s: I2C Channel must be <= 4\n", "Cmd_I2C()");
+            return 0;
+        }
         i2cAddr  = ustrtoul(argv[2], NULL, 0);
         g_customI2CnBytesRx = ustrtoul(argv[4], NULL, 0);
         nBytesTx = ustrlen( argv[3] )/2;      //argv[3] string contains hex characters [0FFEDEADBEEF]

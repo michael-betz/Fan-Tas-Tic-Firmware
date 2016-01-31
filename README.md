@@ -15,25 +15,25 @@ Controller for Pinball machines based on an TM4C123G LaunchPad™ Evaluation Kit
  * All In- / Outputs are identified by a 16 bit unique ID. No configuration necessary.
  * All Outputs support 4 bit PWM with > 125 Hz (using [binary code modulation](http://www.batsocks.co.uk/readme/art_bcm_1.htm))
  * All inputs are debounced and read 333 times per second. A switch toggles after keeping its state for 4 ticks (12 ms).
- * The timing for the WS2811 LEDs is strictly within spec by using the hardware SPI module.
+ * The timing for the WS2811 LEDs is strictly within spec by using the hardware SPI module and DMA transfers.
  * Software easily extendable by running [FreeRTOS](http://www.freertos.org/)
 
 # Digital inputs / outputs
 
-We have 4 I2C channels where we can connect 8 x PC8574 each. The addresses of the chips need to be configured from 0x40 - 0x47.
+There are 4 I2C channels which can handle up to 8 x PCF8574 each. The addresses of the chips needs to be configured from 0x20 - 0x27.
 
-To use an PC8574 as input we have to _write_ a 0xFF to it (to prevent the open drain outputs pulling the pin low). 
+To use an PCF8574 as an input,  a 0xFF needs to be _written_ to it (to prevent the open drain outputs pulling the pin low). 
 Then the pin state can be acquired with a 1 byte read transaction over I2C.
 
 So all I2C extenders (no matter if used as in- or output) can be read in bulk. 
 I2C is fast enough to read all 32 of them (on 4 channels in parallel) with 625 Hz repetition rate. 
-Reading an empty address will give a NO_ACK read error, which will be silently ignored.
+Reading an empty address will give a NO_ACK read error, which is silently ignored.
 
 
 
 ## Debouncing
 
-The taskDebouncer() is running with 333 Hz, reading all switches (matrix and I2C) into an array
+The taskDebouncer() is running at 333 Hz, reading all switches (matrix and I2C) into an array
  * Switch Matrix (SM) is read in foreground while I2C transactions happen in background (TI I2Cm driver)
  * When both reads are finished, the Debouncing routine is called
  * If a changed input bit was detected, it increments a 2 bit [vertical counter](http://www.compuphase.com/electronics/debouncing.htm).
@@ -47,10 +47,10 @@ The taskDebouncer() is running with 333 Hz, reading all switches (matrix and I2C
 It is a 16 bit number which uniquely identifies each input / output pin. Note that depending on the number of IO expanders usend in a setup,
 not all addresses will be valid. 
 
-         Switch input hwIndex addresses:
+         hwIndex for inputs
         ---------------------------------
-         0 - 63  --> Switch matrix on mainboard
-         64 - 71 --> Solenoid driver on mainboard     (not an input!)
+         0 - 63  --> Switch matrix inputs on mainboard
+       [ 64 - 71 --> I2C Solenoid driver on mainboard  NOT AN INPUT! ]
          72 - 79 --> I2Cch. 0, I2Cadr. 0x41, bit 0-7  (First  external PCL GPIO extender on channel 0)
          80 - 87 --> I2Cch. 0, I2Cadr. 0x42, bit 0-7  (Second external PCL GPIO extender on channel 0)
          312-319 --> I2Cch. 3, I2Cadr. 0x47, bit 0-7  (7th    external PCL GPIO extender on channel 3)
@@ -64,42 +64,50 @@ where SMrow is the row wire number (from 0-7) and SMcol is the column wire numbe
  where I2Cchannel is the output channel on the mainboard (from 0-3), I2Cadr is the configured I2C address
  set by dip switches on the port extender (0x40 - 0x47) and PinIndex is the output pin (0-7).
  
-### What about outputs 
-Output extension boards (solenoid driver / digital outputs / etc.) also use the PC8574 I2C chip and hence the same
-addresses. The chip automatically siwtches its pins to output mode once an I2C `write` operation has been carried out. So outputs do not need to be
-specially configured, just fire the OUT command with the known output address.
+### What about I2C outputs 
+Output extension boards (solenoid driver / digital outputs / etc.) also use the PCF8574 I2C chip and hence the same
+addresses. The chip automatically switches its pins to output mode once an I2C `write` operation has been carried out. 
+So outputs do not need to be specially configured, just fire the OUT command with the known output address.
  
-The PC8574 has open drain output drivers and can only sink current to ground. If the output driver is disabled (by writing the bit to 1), the pin
-can be used as an input. If the output driver is enabled (by writing the bit to 0) the pin cannot be used as an input as it is constantly pulled low.
+The PC8574 has open drain output drivers and can only sink current to ground. If the output driver is disabled 
+(by writing the bit to 1), the pin can be used as an input. If the output driver is enabled 
+(by writing the bit to 0) the pin cannot be used as an input as it is constantly pulled low.
   
-!!! To avoid this, the user must take care to not send `OUT` commands on an input `hwIndex` !!!
- 
-Also note that hwIndex 0 - 63 are not valid output addresses as they refer to the Switch matrix which can never be an output.
-That beeing said, I might map hwIndex 60 - 63 to the internal hardware PWM outputs on the mainboard, which do not
-use the PCF GPIO extenders. To be seen.
+__!!! To avoid this, the user must take care to not send `OUT` commands on an `hwIndex` which is used as an input !!!__
+
+The mainboard features a built-in PCF8574 to drive 8 solenoids. use hwIndex 64 - 71 to address these channels.
+
+### What about the HW. PWM outputs
+The mainboard features 4 high resolution PWM solenoid drivers running at 50 kHz. 
+For these, the pwm hold power and pwm pulse power can be specified from 0 - 1500.
+The hwIndexes 60 - 63 are mapped in any `OUT` command to the HW. PWM channels.
+For any `IN` command, these addresses are mapped to the highest 4 Switch Matrix inputs.
 
 # Serial command API
 
 The Tiva board has two physical USB connectors. The `DEBUG` port is used to load and debug the firmware.
-It also provides a virtual serial port, which can be opened in a terminal to see status messages from
-the Fan-Tas-Tic firmware. This port is read-only. The `DEVICE` port provides a virtual serial port
-over which all the communication is handeled and where commands are sent to. This port supports 
-read and write.
+It also provides a virtual serial port, which can be opened in a terminal to enter commands manually and
+to see status and debug messages from the Fan-Tas-Tic firmware. 
 
-        Available commands
-        ------------------
+The `DEVICE` port provides a virtual serial port
+which is meant to communicate with the (Python) host application. This port listens to the same commands but does not echo any
+input characters, status messages or errors, which makes it easier to talk to programatically.
+
+        **************************************************
+         Available commands   <required>  [optional]
+        **************************************************
         ?     : Display list of commands
         *IDN? : Display ID and version info
         SW?   : Return the state of ALL switches (40 bytes)
-        OUT   : OUT <hwIndex> <PWMlow> <tPulse> <PWMhigh>
-        OUT   : OUT <hwIndex> <PWMvalue>
-        RUL   : RUL <ID> <IDin> <IDout> <trHoldOff> <tPulse>
+        OUT   : <hwIndex> <PWMlow> [tPulse] [PWMhigh]
+        RUL   : <ID> <IDin> <IDout> <trHoldOff> <tPulse>
                 <pwmOn> <pwmOff> <bPosEdge> <bAutoOff> <bLevelTr>
         RULE  : Enable  a previously disabled rule: RULE <ID>
         RULD  : Disable a previously defined rule:  RULD <ID>
-        LEC   : LEC <channel> <spiSpeed [Hz]> <frameFmt (opt)>
-        LED   : LED <channel> <nBytes>\n<binary blob of nBytes>
-        I2C   : I2C <channel> <I2Caddr> <sendData> <nBytesRx>
+        LEC   : <channel> <spiSpeed [Hz]> [frameFmt]
+        LED   : <channel> <nBytes>\n<binary blob of nBytes>
+        I2C   : <channel> <I2Caddr> <sendData> <nBytesRx>
+
 
 ## Switch events
 When a switch input flips its state, its hwIndex and new state is immediately reported on the USB serial port
@@ -213,6 +221,16 @@ Sent:
         \xFF\xFF\xFF\x7F\x00\x00
 
 Set the first two LEDs on channel 1. The first LED will glow white at full power, the second red at half power.
+
+### Troubleshooting glitches
+If you get glitches and artifacts on your LEDs, you can try the following:
+
+    * All compiler optimizations must be switched on (optimize for max. speed). I have observed that without optimization,
+      the DMA buffer can underflow, which leads to an LED glitch
+    * Play with the SPI speed setting (`LEC` command). Some LED strings, especially cheap ones from eBay, 
+      may significantly deviate from specifications
+    * Try shorter cables to the first LED
+    * If nothing else helps, have a look at the data stream on a scope
 
 ## `LEC` configure the WS2811 data rate
 Set the output data-rate of the SPI module in bits / s.

@@ -213,6 +213,8 @@ void readSwitchMatrix() {
 }
 
 void i2cDoneCallback(void* pvCallbackData, uint_fast8_t ui8Status) {
+    // pvCallbackData = pointer to a place in a global array, where the
+    // status of the current transaction can be stored
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     uint8_t *tempReadState = pvCallbackData;
     *tempReadState = ui8Status;

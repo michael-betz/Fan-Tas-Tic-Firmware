@@ -221,8 +221,8 @@ int main(void) {
     UARTStdioConfig(0, 115200, SYSTEM_CLOCK);
     UARTprintf("\n\n\n\n"
             "**************************************************\n"
-            " Hi, here's the brain of Fan-Tas-Tic Pinball V0.0 \n"
-            "**************************************************\n\n");
+            " Hi, here's the brain of Fan-Tas-Tic Pinball \n"
+            "**************************************************\n");
 
     configureTimer();   //Init debugh HW timer for measuring processor cycles (%timeit)
     initMyI2C();        //Init the 4 I2C hardware channels
