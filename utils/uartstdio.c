@@ -37,6 +37,17 @@
 #include "driverlib/uart.h"
 #include "utils/uartstdio.h"
 
+// For echoing the received character to the USB parser
+#include "usblib/usblib.h"
+#include "usblib/usbcdc.h"
+#include "usblib/device/usbdevice.h"
+#include "usblib/device/usbdcdc.h"
+#include "usb_serial_structs.h"
+#include "FreeRTOS.h"
+#include "semphr.h"
+#include "task.h"
+#include "myTasks.h"
+
 //*****************************************************************************
 //
 //! \addtogroup uartstdio_api
@@ -1682,24 +1693,30 @@ UARTStdioIntHandler(void)
             // If there is space in the receive buffer, put the character
             // there, otherwise throw it away.
             //
-            if(!RX_BUFFER_FULL)
-            {
-                //
-                // Store the new character in the receive buffer
-                //
-                g_pcUARTRxBuffer[g_ui32UARTRxWriteIndex] =
-                    (unsigned char)(i32Char & 0xFF);
-                ADVANCE_RX_BUFFER_INDEX(g_ui32UARTRxWriteIndex);
-
-                //
-                // If echo is enabled, write the character to the transmit
-                // buffer so that the user gets some immediate feedback.
-                //
-                if(!g_bDisableEcho)
-                {
-                    UARTwrite((const char *)&cChar, 1);
-                }
-            }
+//            if(!RX_BUFFER_FULL)
+//            {
+//                //
+//                // Store the new character in the receive buffer
+//                //
+//                g_pcUARTRxBuffer[g_ui32UARTRxWriteIndex] =
+//                    (unsigned char)(i32Char & 0xFF);
+//                ADVANCE_RX_BUFFER_INDEX(g_ui32UARTRxWriteIndex);
+//
+//                //
+//                // If echo is enabled, write the character to the transmit
+//                // buffer so that the user gets some immediate feedback.
+//                //
+//                if(!g_bDisableEcho)
+//                {
+//                    UARTwrite((const char *)&cChar, 1);
+//                }
+//            }
+            // Echo the character to the Terminal AND the USB parser
+            UARTwrite((const char *)&cChar, 1);
+            BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+            USBBufferWrite( &g_sRxBuffer, (uint8_t *)&cChar, 1 );
+            vTaskNotifyGiveFromISR( hUSBCommandParser, &xHigherPriorityTaskWoken );
+            portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
         }
 
         //

@@ -123,6 +123,16 @@ void initGpio(){
     ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_1 | GPIO_PIN_0, GPIO_STRENGTH_12MA, GPIO_PIN_TYPE_STD);
     // Enable the GPIO pins for the LED (PF2 & PF3).
     ROM_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2);
+
+    // Test for PCB short circuits
+//    ROM_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_2|GPIO_PIN_3);
+//    while(1){
+//        ROM_GPIOPinWrite( GPIO_PORTB_BASE, GPIO_PIN_2|GPIO_PIN_3, 0xFF );
+//        SysCtlDelay( SYSTEM_CLOCK/3 );
+//        ROM_GPIOPinWrite( GPIO_PORTB_BASE, GPIO_PIN_2|GPIO_PIN_3, 0x00 );
+//        SysCtlDelay( SYSTEM_CLOCK/3 );
+//    }
+
 }
 
 myPWMGenConfigure(uint32_t ui32Base, uint32_t ui32Gen){
@@ -271,7 +281,7 @@ int main(void) {
     xTaskCreate(taskDebouncer, (const portCHAR *)"Debouncer", 256, NULL, 0, NULL);
 
     // Dispatch I2C write commands to PCL GPIO extenders every 1 ms
-    xTaskCreate(taskPCLOutWriter, (const portCHAR *)"PCLwriter", 128, NULL, 1, NULL);
+    xTaskCreate(taskPCFOutWriter, (const portCHAR *)"PCLwriter", 128, NULL, 1, NULL);
 
     vTaskStartScheduler();  // This should never return!
     return 0;

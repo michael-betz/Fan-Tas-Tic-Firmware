@@ -37,7 +37,7 @@
 tI2CMInstance g_sI2CInst[4];                         //Four TI I2C driver instances for 4 I2C channels
 
 // I2C driver streams input state data into the below arrays
-uint8_t g_i2cReadStates[4][MAX_PCLS_PER_CHANNEL];    //All Error codes of last I2C scan
+uint8_t g_i2cReadStates[4][PCF_MAX_PER_CHANNEL];     //All Error codes of last I2C scan
 t_switchStateConverter g_SwitchStateSampled;         //Read values of last I2C scan
 t_switchStateConverter g_SwitchStateDebounced;       //Debounced values (the same after 4 reads)
 t_switchStateConverter g_SwitchStateToggled;         //Bits which changed
@@ -120,14 +120,14 @@ void initMyI2C() {
 
     // Enable weak internal pullups on the SCK pin.
     // Also disabes open drain so remove this once external pullups are in place
-    ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_2, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C0
-    ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_3, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
-    ROM_GPIOPadConfigSet( GPIO_PORTA_BASE, GPIO_PIN_6, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C1
-    ROM_GPIOPadConfigSet( GPIO_PORTA_BASE, GPIO_PIN_7, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
-    ROM_GPIOPadConfigSet( GPIO_PORTE_BASE, GPIO_PIN_4, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C2
-    ROM_GPIOPadConfigSet( GPIO_PORTE_BASE, GPIO_PIN_5, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
-    ROM_GPIOPadConfigSet( GPIO_PORTD_BASE, GPIO_PIN_0, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C3
-    ROM_GPIOPadConfigSet( GPIO_PORTD_BASE, GPIO_PIN_1, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
+//    ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_2, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C0
+//    ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_3, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
+//    ROM_GPIOPadConfigSet( GPIO_PORTA_BASE, GPIO_PIN_6, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C1
+//    ROM_GPIOPadConfigSet( GPIO_PORTA_BASE, GPIO_PIN_7, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
+//    ROM_GPIOPadConfigSet( GPIO_PORTE_BASE, GPIO_PIN_4, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C2
+//    ROM_GPIOPadConfigSet( GPIO_PORTE_BASE, GPIO_PIN_5, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
+//    ROM_GPIOPadConfigSet( GPIO_PORTD_BASE, GPIO_PIN_0, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C3
+//    ROM_GPIOPadConfigSet( GPIO_PORTD_BASE, GPIO_PIN_1, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
 
 // Enable loopbakc mode (without pullups and without loopback the driver will hang! :( )
 //    I2C0_MCR_R |= 0x01;
@@ -217,7 +217,7 @@ void i2cDoneCallback(void* pvCallbackData, uint_fast8_t ui8Status) {
     uint8_t *tempReadState = pvCallbackData;
     *tempReadState = ui8Status;
     g_readCounter++;
-    if (g_readCounter >= 4 * MAX_PCLS_PER_CHANNEL) {
+    if (g_readCounter >= 4 * PCF_MAX_PER_CHANNEL) {
         configASSERT( xTaskToNotifyI2CscanDone != NULL );
         vTaskNotifyGiveFromISR(xTaskToNotifyI2CscanDone,
                 &xHigherPriorityTaskWoken);
@@ -225,7 +225,7 @@ void i2cDoneCallback(void* pvCallbackData, uint_fast8_t ui8Status) {
     }
 }
 
-// Reads out 1 byte from the address range 0x40 - 0x47 (where PCFL can be) from all 4 I2C channels.
+// Reads out 1 byte from the address range 0x20 - 0x27 (where PCFL can be) from all 4 I2C channels.
 // Interrupt driven and runs in background. Writes to the global data and state arrays
 //    Finished when g_readCounter == 4*MAX_PCLS_PER_CHANNEL
 void i2cStartPCFL8574refresh() {
@@ -233,17 +233,17 @@ void i2cStartPCFL8574refresh() {
     g_readCounter = 0;
     configASSERT( xTaskToNotifyI2CscanDone == NULL );
     xTaskToNotifyI2CscanDone = xTaskGetCurrentTaskHandle();
-    for (i = 0; i <= MAX_PCLS_PER_CHANNEL - 1; i++) {
-        ts_i2cTransfer(0, 0x40 + i, NULL, 0,
+    for (i = 0; i <= PCF_MAX_PER_CHANNEL - 1; i++) {
+        ts_i2cTransfer(0, PCF_LOWEST_ADDR + i, NULL, 0,
                 g_SwitchStateSampled.switchState.i2cReadData[0], 1,
                 i2cDoneCallback, &g_i2cReadStates[0][i]);
-        ts_i2cTransfer(1, 0x40 + i, NULL, 0,
+        ts_i2cTransfer(1, PCF_LOWEST_ADDR + i, NULL, 0,
                 g_SwitchStateSampled.switchState.i2cReadData[1], 1,
                 i2cDoneCallback, &g_i2cReadStates[1][i]);
-        ts_i2cTransfer(2, 0x40 + i, NULL, 0,
+        ts_i2cTransfer(2, PCF_LOWEST_ADDR + i, NULL, 0,
                 g_SwitchStateSampled.switchState.i2cReadData[2], 1,
                 i2cDoneCallback, &g_i2cReadStates[2][i]);
-        ts_i2cTransfer(3, 0x40 + i, NULL, 0,
+        ts_i2cTransfer(3, PCF_LOWEST_ADDR + i, NULL, 0,
                 g_SwitchStateSampled.switchState.i2cReadData[3], 1,
                 i2cDoneCallback, &g_i2cReadStates[3][i]);
     }
@@ -346,7 +346,7 @@ void processQuickRules() {
                                                                 //                    Switch output Off
                             UARTprintf("%22s: [%d] Outp = Off after release\n",
                                     "processQuickRules()", i);
-                            setPclOutput(currentRule->outputDriverId, 0, 0, 0);
+                            setPCFOutput(currentRule->outputDriverId, 0, 0, 0);
                         }
                     } else {                                    //            Else:
                         TF(QRF_STATE_TRIG) = 0;                 //                set Rule to untriggered state
@@ -363,7 +363,7 @@ void processQuickRules() {
                                 currentRule->triggerHoldOffTime;
                         UARTprintf("%22s: [%d] Triggered, Outp. set\n",
                                 "processQuickRules()", i);
-                        setPclOutput(currentRule->outputDriverId,
+                        setPCFOutput(currentRule->outputDriverId,
                                 currentRule->tPulse, currentRule->pwmHigh,
                                 currentRule->pwmLow);
                     }
@@ -460,8 +460,8 @@ t_outputBit decodeHwIndex(uint16_t hwIndex) {
     i2cCh = (tempResult.byteIndex - 8) / 8;    // Only i2c channel 0-3 exists
     if (i2cCh <= 3) {
         tempResult.hwIndexType = HW_INDEX_I2C;
-        tempResult.i2cChannel = i2cCh;//I2C address, each channel has address 0x40 - 0x47
-        tempResult.i2cAddress = (tempResult.byteIndex - 8) % 8 + 0x40;
+        tempResult.i2cChannel = i2cCh;//I2C address, each channel has address 0x20 - 0x27
+        tempResult.i2cAddress = (tempResult.byteIndex - 8) % 8 + PCF_LOWEST_ADDR;
         return tempResult;
     }
     tempResult.hwIndexType = HW_INDEX_INVALID;
@@ -499,7 +499,7 @@ void handleBitRules( t_PCLOutputByte *outListPtr, uint8_t dt ) {
     }
 }
 
-void taskPCLOutWriter(void *pvParameters) {
+void taskPCFOutWriter(void *pvParameters) {
     // Dispatch I2C write commands to PCL GPIO extenders periodically
     // Use binary code modulation for N bit PWM
     UARTprintf("%22s: %s", "taskPCLOutWriter()", "Started!\n");
@@ -562,7 +562,7 @@ void taskPCLOutWriter(void *pvParameters) {
     }
 }
 
-void setPclOutput(t_outputBit outLocation, int16_t tPulse, uint16_t highPower, uint16_t lowPower) {
+void setPCFOutput(t_outputBit outLocation, int16_t tPulse, uint16_t highPower, uint16_t lowPower) {
 // Set the power level and pulse settings of an output pin
 //    tPulse    = duration of the pulse [ms]
 //    highPower = PWM value during the pulse

@@ -65,13 +65,13 @@ tCmdLineEntry g_psCmdTable[] = {
         { "?",     Cmd_help, ": Display list of commands" },
         { "*IDN?", Cmd_IDN,  ": Display ID and version info" },
         { "SW?",   Cmd_SW,   ": Return the state of ALL switches (40 bytes)" },
-        { "OUT",   Cmd_OUT,  ": OUT <hwIndex> <PWMlow> <tPulse> <PWMhigh>\nOUT   : OUT <hwIndex> <PWMvalue>" },
-        { "RUL",   Cmd_RUL,  ": RUL <ID> <IDin> <IDout> <trHoldOff> <tPulse>\n        <pwmOn> <pwmOff> <bPosEdge> <bAutoOff> <bLevelTr>" },
+        { "OUT",   Cmd_OUT,  ": <hwIndex> <PWMlow> [tPulse] [PWMhigh]" },
+        { "RUL",   Cmd_RUL,  ": <ID> <IDin> <IDout> <trHoldOff> <tPulse>\n        <pwmOn> <pwmOff> <bPosEdge> <bAutoOff> <bLevelTr>" },
         { "RULE",  Cmd_RULE, ": Enable  a previously disabled rule: RULE <ID>" },
         { "RULD",  Cmd_RULD, ": Disable a previously defined rule:  RULD <ID>" },
-        { "LEC",   Cmd_LEC,  ": LEC <channel> <spiSpeed [Hz]> <frameFmt (opt)>" },
-        { "LED",   Cmd_LED,  ": LED <channel> <nBytes>\\n<binary blob of nBytes>" },
-        { "I2C",   Cmd_I2C,  ": I2C <channel> <I2Caddr> <sendData> <nBytesRx>" },
+        { "LEC",   Cmd_LEC,  ": <channel> <spiSpeed [Hz]> [frameFmt]" },
+        { "LED",   Cmd_LED,  ": <channel> <nBytes>\\n<binary blob of nBytes>" },
+        { "I2C",   Cmd_I2C,  ": <channel> <I2Caddr> <sendData> <nBytesRx>" },
         { 0, 0, 0 } };
 
 
@@ -286,6 +286,7 @@ void ts_usbSend(uint8_t *data, uint16_t len) {
 //    Do a thread safe USB TX transfer in background (add data to USB send buffer)
     uint32_t freeSpace;
     taskENTER_CRITICAL();
+    UARTwrite( (const char*) data, len );   //Echo to debug connection
     freeSpace = USBBufferSpaceAvailable(&g_sTxBuffer);
 //        UARTprintf( "ts_usbSend(): TX buffer %d bytes free.\n", freeSpace );
     if (freeSpace >= len) {
@@ -300,14 +301,18 @@ void ts_usbSend(uint8_t *data, uint16_t len) {
 // This function implements the "help" command.  It prints a simple list of the available commands with a brief description.
 int Cmd_help(int argc, char *argv[]) {
     tCmdLineEntry *pEntry;
-    UARTprintf("\nAvailable commands\n");
-    UARTprintf("------------------\n");
+    UARTprintf("\n**************************************************\n");
+    UARTprintf(  " Available commands   <required>  [optional]\n");
+    UARTprintf(  "**************************************************\n");
     pEntry = &g_psCmdTable[0];    // Point at the beginning of the command table.
     // Enter a loop to read each entry from the command table.  The end of the
     // table has been reached when the command name is NULL.
     while (pEntry->pcCmd) {
         UARTprintf("%6s%s\n", pEntry->pcCmd, pEntry->pcHelp);// Print the command name and the brief description.
         pEntry++;                    // Advance to the next entry in the table.
+        while( UARTTxBytesFree() < 150 ){
+            vTaskDelay( 1 );
+        }
     }
     return (0);                                                // Return success.
 }
@@ -371,7 +376,7 @@ int Cmd_OUT(int argc, char *argv[]) {
             return 0;
         }
         UARTprintf("Cmd_OUT(): i2cCh %d, i2cAdr 0x%02x, bit %d = tp %d, pH %d, pL %d\n", outLocation.i2cChannel, outLocation.i2cAddress, outLocation.pinIndex, tPulse, pwmHigh, pwmLow);
-        setPclOutput(outLocation, tPulse, pwmHigh, pwmLow);
+        setPCFOutput(outLocation, tPulse, pwmHigh, pwmLow);
         return(0);
 
     case HW_INDEX_HWPWM:
@@ -380,7 +385,7 @@ int Cmd_OUT(int argc, char *argv[]) {
             return(0);
         }
         UARTprintf("Cmd_OUT(): HW_PWM_CH %d, tp %d, pH %d, pL %d\n", outLocation.pinIndex, tPulse, pwmHigh, pwmLow);
-        setPclOutput(outLocation, tPulse, pwmHigh, pwmLow);
+        setPCFOutput(outLocation, tPulse, pwmHigh, pwmLow);
         return(0);
 
     case HW_INDEX_SWM:

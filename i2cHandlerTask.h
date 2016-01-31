@@ -13,7 +13,9 @@
 //*****************************************************************************
 // * The arrays with the I2C readback values and states of each input *
 // How many PCL chips per channel (careful must be a multiple of 4)
-#define MAX_PCLS_PER_CHANNEL 8
+#define PCF_MAX_PER_CHANNEL 8
+// Lowest possible I2C Address of a PCF8574 IO extender (all address pins low)
+#define PCF_LOWEST_ADDR 0x20
 // How many uint32_t values to express all the input states
 #define N_LONGS sizeof(t_switchState)/sizeof(uint32_t)
 // How many uint8_t  values to express all the input states
@@ -50,7 +52,7 @@
 // Holds the state of all input pins (all I2C extenders + Switch matrix)
 typedef struct {
     uint8_t matrixData[8];
-    uint8_t i2cReadData[4][MAX_PCLS_PER_CHANNEL];
+    uint8_t i2cReadData[4][PCF_MAX_PER_CHANNEL];
 } t_switchState;
 
 // Allows the input state to be read as bytes or 32 bit words for faster processing
@@ -131,7 +133,7 @@ void enableQuickRule(uint8_t id);
 void disableQuickRule(uint8_t id);
 
 t_outputBit decodeHwIndex(uint16_t hwIndex);
-void setPclOutput(t_outputBit outLocation, int16_t tPulse, uint16_t highPower, uint16_t lowPower);
-void taskPCLOutWriter(void *pvParameters);
+void setPCFOutput(t_outputBit outLocation, int16_t tPulse, uint16_t highPower, uint16_t lowPower);
+void taskPCFOutWriter(void *pvParameters);
 
 #endif /* I2CHANDLERTASK_H_ */
