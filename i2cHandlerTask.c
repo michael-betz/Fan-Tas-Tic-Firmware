@@ -504,22 +504,23 @@ void handleBitRules( t_PCLOutputByte *outListPtr, uint8_t dt ) {
 void taskPCFOutWriter(void *pvParameters) {
     // Dispatch I2C write commands to PCL GPIO extenders periodically
     // Use binary code modulation for N bit PWM
-    UARTprintf("%22s: %s", "taskPCLOutWriter()", "Started!\n");
+    UARTprintf("%22s: Started!\n", "taskPCLOutWriter()");
     uint8_t i, j, lastTickCount = 0;
     uint8_t bcmCycleCounter = 0;    //Which bit to output
 //    uint32_t c = 0, ticks;
     TickType_t xLastWakeTime;
     t_PCLOutputByte *outListPtr = g_outWriterList;
-//    -------------------------------------------------------
-//    Init Data structure for caching the output values
-//    -------------------------------------------------------
+//  -------------------------------------------------------
+//   Init Data structure for caching the output values
+//  -------------------------------------------------------
     for (i = 0; i < OUT_WRITER_LIST_LEN; i++) {
         for (j = 0; j < N_BIT_PWM; j++) {
-            outListPtr->bcmBuffer[j] = 0xFF;    //Set all bits by default
+            outListPtr->bcmBuffer[j] = 0x00;    //Clear all bits by default
         }
         outListPtr->i2cChannel = -1;            //This marks the entry as invalid
         outListPtr++;
     }
+    vTaskDelay(1);
     xLastWakeTime = xTaskGetTickCount();
     while (1) {
         //------------------------------------------------------------------
@@ -566,6 +567,8 @@ void taskPCFOutWriter(void *pvParameters) {
 
 void setPCFOutput(t_outputBit outLocation, int16_t tPulse, uint16_t highPower, uint16_t lowPower) {
 // Set the power level and pulse settings of an output pin
+// Will add a job to the output BCM list
+// ToDo: Make sure that BCMing outputs are not reported as switch events.
 //    tPulse    = duration of the pulse [ms]
 //    highPower = PWM value during the pulse
 //    lowPower  = PWM value after  the pulse
@@ -587,6 +590,7 @@ void setPCFOutput(t_outputBit outLocation, int16_t tPulse, uint16_t highPower, u
                 setPwm( outLocation.pinIndex, highPower );
             }
             outListPtr->i2cChannel = outLocation.i2cChannel;//Mark the item as valid to the output routine
+            UARTprintf("%22s: wrote to g_outWriterList[%d] (new)\n", "setPclOutput()", i );
             return;
         } else if (outListPtr->i2cChannel == outLocation.i2cChannel
                 && outListPtr->i2cAddress == outLocation.i2cAddress) {
@@ -599,6 +603,7 @@ void setPCFOutput(t_outputBit outLocation, int16_t tPulse, uint16_t highPower, u
                 setPwm( outLocation.pinIndex, highPower );
             }
             bitRules->tPulse = tPulse;
+            UARTprintf("%22s: wrote to g_outWriterList[%d]\n", "setPclOutput()", i );
             return;
         }
         outListPtr++;

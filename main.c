@@ -213,19 +213,30 @@ void setPwm( uint8_t channel, uint16_t pwmValue ){
 // Main function
 //-------------------------------------------------------------------------
 int main(void) {
+    uint8_t i,j,z=0;
     // Set the clocking to run at 80 MHz from the PLL.
-    ROM_SysCtlClockSet(SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN);
+    ROM_SysCtlClockSet( SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN );
     // Init GPIO pins
     initGpio();
-    // Set up the UART which is connected to the virtual debugging COM port
-    UARTStdioConfig(0, 115200, SYSTEM_CLOCK);
-    UARTprintf("\n\n\n\n"
-            "**************************************************\n"
-            " Hi, here's the brain of Fan-Tas-Tic Pinball \n"
-            "**************************************************\n");
-
+//    while(1){
+//        ledOut( 0xFF );
+//        SysCtlDelay( 1000000 );
+//        ledOut( 0x00 );
+//        SysCtlDelay( 1000000 );
+//    }
     configureTimer();   //Init debugh HW timer for measuring processor cycles (%timeit)
     initMyI2C();        //Init the 4 I2C hardware channels
+    //  -------------------------------------------------------
+    //   Init all PCFs to output low
+    //   This is to protect any Relais conected to PCF outputs
+    //   The User has to set the pin high manually if it is
+    //   to be used as an input !
+    //  -------------------------------------------------------
+    for (i=0; i<=3; i++) {            // For each I2C channel
+        for (j=0x20; j<=0x27; j++) {  // For each PCFL I2C addr.
+            ts_i2cTransfer( i, j, &z, 1, NULL, 0, NULL, NULL ); //Send 0x00
+        }
+    }
     spiSetup();         //Init 3 SPI channels for setting ws2811 LEDs
     initPWM();          //Init the 4 Hardware PWM output channels
     // Enable lazy stacking for interrupt handlers.  This allows floating-point
@@ -263,7 +274,6 @@ int main(void) {
     ROM_IntPrioritySet(INT_SSI1, (5<<5) );     //SPI  = High priority
     ROM_IntPrioritySet(INT_SSI2, (5<<5) );
     ROM_IntPrioritySet(INT_SSI3, (5<<5) );
-
 
     //-------------------------------------------------------------------------
     // Startup the FreeRTOS scheduler

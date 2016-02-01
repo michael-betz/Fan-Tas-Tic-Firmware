@@ -407,7 +407,7 @@ UARTStdioConfig(uint32_t ui32PortNum, uint32_t ui32Baud, uint32_t ui32SrcClock)
     // in the transmit buffer.
     //
     MAP_UARTIntDisable(g_ui32Base, 0xFFFFFFFF);
-    MAP_UARTIntEnable(g_ui32Base, UART_INT_RX | UART_INT_RT);
+    MAP_UARTIntEnable(g_ui32Base, UART_INT_RT | UART_INT_RX);
     MAP_IntEnable(g_ui32UARTInt[ui32PortNum]);
 #endif
 

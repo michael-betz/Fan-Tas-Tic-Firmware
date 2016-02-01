@@ -276,7 +276,7 @@ __Example__
 
 Sent:
 
-         I2C 3 0x20 0xABCDEF 2\n
+         I2C 3 0x20 ABCDEF 2\n
 
 Received:
 

@@ -98,6 +98,12 @@ void taskDemoLED(void *pvParameters) {
 // Flash the LEDs on the launchpad
 //    static char debugBuffer[256];
 //    uint16_t i;
+    // Set up the UART which is connected to the virtual debugging COM port
+    UARTStdioConfig(0, 115200, SYSTEM_CLOCK);
+    UARTprintf("\n\n\n\n"
+            "**************************************************\n"
+            " Hi, here's the brain of Fan-Tas-Tic Pinball \n"
+            "**************************************************\n");
     UARTprintf("%22s: %s", "taskDemoLED()", "Started!\n");
     while (1) {
         // Turn on LED 1
@@ -311,9 +317,11 @@ int Cmd_help(int argc, char *argv[]) {
     while (pEntry->pcCmd) {
         UARTprintf("%6s%s\n", pEntry->pcCmd, pEntry->pcHelp);// Print the command name and the brief description.
         pEntry++;                    // Advance to the next entry in the table.
+#ifdef UART_BUFFERED
         while( UARTTxBytesFree() < 150 ){
             vTaskDelay( 1 );
         }
+#endif
     }
     return (0);                                                // Return success.
 }

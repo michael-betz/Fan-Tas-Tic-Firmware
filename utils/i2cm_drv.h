@@ -61,7 +61,7 @@ typedef void (tSensorCallback)(void *pvData, uint_fast8_t ui8Status);
 // The maximum number of outstanding commands for each I2C master instance.
 //
 //*****************************************************************************
-#define NUM_I2CM_COMMANDS       10
+#define NUM_I2CM_COMMANDS       32
 
 //*****************************************************************************
 //
