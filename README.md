@@ -225,8 +225,10 @@ Set the first two LEDs on channel 1. The first LED will glow white at full power
 ### Troubleshooting glitches
 If you get glitches and artifacts on your LEDs, you can try the following:
 
-    * All compiler optimizations must be switched on (optimize for max. speed). I have observed that without optimization,
-      the DMA buffer can underflow, which leads to an LED glitch
+    * If using the TI compiler, optimization level must be set to 3 `Interprocedure Optimization`
+      and speed vs size tradeoff to `optimize for max. speed`.
+      Anything below gives glitches as the DMA buffer underflows. Anything above
+      gives deadlocks due to skipped bytes on the USB serial port.
     * Play with the SPI speed setting (`LEC` command). Some LED strings, especially cheap ones from eBay, 
       may significantly deviate from specifications
     * Try shorter cables to the first LED
