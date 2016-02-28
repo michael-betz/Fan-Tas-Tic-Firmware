@@ -153,18 +153,28 @@ void ts_i2cTransfer(uint8_t channel, uint_fast8_t ui8Addr,
 }
 
 uint8_t getSMrow() {
-    uint8_t temp;
+    uint8_t temp = 0;
     // Read the state of the row of the switch matrix.
     // The inputs are distributed across 4 Ports :p
-    //         ,2,1,0   PORTE
-    //     ,4,3         PORTC
-    // ,6,5             PORTD
-    //7                 PORTF
-    temp  = GPIOPinRead( GPIO_PORTE_BASE, GPIO_PIN_3 | GPIO_PIN_2 | GPIO_PIN_1) >> 1;
-    temp |= GPIOPinRead( GPIO_PORTC_BASE, GPIO_PIN_7 | GPIO_PIN_6) >> 3;
-    temp |= GPIOPinRead( GPIO_PORTD_BASE, GPIO_PIN_7 | GPIO_PIN_6) >> 1;
-//    temp |= GPIOPinRead( GPIO_PORTF_BASE, GPIO_PIN_4) << 3;    //TODO: Renable this on the final hardware !
-    return temp;
+    //-------------------------------
+    //7 6 5 4 3 2 1 0   Bit position
+    //-------------------------------
+    //        0 1 2     PORTE
+    //4 3               PORTC
+    //6 5               PORTD
+    //      7           PORTF
+    HWREGBITB( &temp, 0 ) = ROM_GPIOPinRead( GPIO_PORTE_BASE, GPIO_PIN_3 ) > 0;
+    HWREGBITB( &temp, 1 ) = ROM_GPIOPinRead( GPIO_PORTE_BASE, GPIO_PIN_2 ) > 0;
+    HWREGBITB( &temp, 2 ) = ROM_GPIOPinRead( GPIO_PORTE_BASE, GPIO_PIN_1 ) > 0;
+
+    HWREGBITB( &temp, 3 ) = ROM_GPIOPinRead( GPIO_PORTC_BASE, GPIO_PIN_6 ) > 0;
+    HWREGBITB( &temp, 4 ) = ROM_GPIOPinRead( GPIO_PORTC_BASE, GPIO_PIN_7 ) > 0;
+
+    HWREGBITB( &temp, 5 ) = ROM_GPIOPinRead( GPIO_PORTD_BASE, GPIO_PIN_6 ) > 0;
+    HWREGBITB( &temp, 6 ) = ROM_GPIOPinRead( GPIO_PORTD_BASE, GPIO_PIN_7 ) > 0;
+
+    HWREGBITB( &temp, 7 ) = ROM_GPIOPinRead( GPIO_PORTF_BASE, GPIO_PIN_4 ) > 0;
+    return ~temp;
 }
 
 void resetSMrow() {
@@ -194,7 +204,7 @@ void resetSMrow() {
 void advanceSMrow() {
     ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, SM_COL_CLK);//Shift register clock = pos. edge
     ROM_SysCtlDelay( SM_COL_DELAY_CNT);
-    ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, 0);    //Shift register data input = low
+    ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, 0);         //Shift register data input = low
     ROM_SysCtlDelay( SM_COL_DELAY_CNT);
     ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, SM_COL_DAT);//Latch clock = pos. edge
     ROM_SysCtlDelay( SM_COL_DELAY_CNT);
@@ -277,20 +287,17 @@ void reportSwitchStates() {
     uint16_t charsWritten = 3;
     uint32_t tempValue;
     ustrncpy(outBuffer, "SE:", REPORT_SWITCH_BUF_SIZE); //SE = Switch event
-    for (i = 0; i < N_LONGS; i++) {
-        if (g_SwitchStateToggled.longValues[i]) {
+    for (i = 0; i < N_LONGS; i++) {                     // Go through all 32 bit Long-values
+        if ( g_SwitchStateToggled.longValues[i] ) {     // If a bit is set
             tempValue = g_SwitchStateToggled.longValues[i];
-            for (j = 0; j <= 31; j++) {
-                if (tempValue & 0x00000001) { //We found a bit that changed, report over serial USB
+            for ( j=0; j<=31; j++ ) {
+                if ( tempValue & 0x00000001 ) {         //We found a bit that changed, report over serial USB
                     // 3rd switch changed to 0, 125th switch changed to 1 "SE:003=0;07D=1;"
-                    switchValue = (g_SwitchStateDebounced.longValues[i] >> j)
-                            & 0x00000001;
-                    charsWritten += usnprintf(&outBuffer[charsWritten],
-                    REPORT_SWITCH_BUF_SIZE - charsWritten, "%03x=%01d ",
-                            i * 32 + j, switchValue);
-                    if (charsWritten >= REPORT_SWITCH_BUF_SIZE - 10) {
-                        UARTprintf(
-                                "reportSwitchStates(): Too much changed, string buffer overflow!\n");
+                    switchValue = HWREGBITW( &g_SwitchStateDebounced.longValues[i], j );
+                    charsWritten += usnprintf( &outBuffer[charsWritten],
+                    REPORT_SWITCH_BUF_SIZE-charsWritten, "%03x=%01d ", i*32+j, switchValue );
+                    if ( charsWritten >= REPORT_SWITCH_BUF_SIZE-10 ) {
+                        UARTprintf("reportSwitchStates(): Too much changed, string buffer overflow!\n");
                         return;
                     }
                 }
@@ -319,12 +326,7 @@ void processQuickRules() {
 //    If a rule is enabled:
 //        If it is currently triggered:
 //            If holdOff time expired:
-//                If OFF_ON_RELEASE flag is set:
-//                    If input is released:
-//                        switch output Off
-//                        set Rule to untriggered state
-//                Else:
-//                    set Rule to untriggered state
+//                set Rule to untriggered state
 //            Else:
 //                decrement holdOff time
 //        else:
@@ -338,36 +340,23 @@ void processQuickRules() {
         if (TF(QRF_ENABLED)) {                                  //If a rule is enabled:
             bIndex = currentRule->inputSwitchId.byteIndex;
             pinIndex = currentRule->inputSwitchId.pinIndex;
-            pinValue = HWREGBITB(&g_SwitchStateDebounced.charValues[bIndex],
-                    pinIndex);
+            pinValue = HWREGBITB( &g_SwitchStateDebounced.charValues[bIndex], pinIndex );
             if (TF(QRF_STATE_TRIG)) {                           //    If it is currently triggered:
                 if (currentRule->triggerHoldOffCounter <= 0) {  //      If holdOff time expired:
-                    if (TF(QRF_OFF_ON_RELASE)) {                //            If OFF_ON_RELEASE flag is set:
-                        if (pinValue != TF(QRF_TRIG_EDGE_POS)){ //                If input released:
-                            TF(QRF_STATE_TRIG) = 0;             //                    set Rule to untriggered state
-                                                                //                    Switch output Off
-                            UARTprintf("%22s: [%d] Outp = Off after release\n",
-                                    "processQuickRules()", i);
-                            setPCFOutput(currentRule->outputDriverId, 0, 0, 0);
-                        }
-                    } else {                                    //            Else:
-                        TF(QRF_STATE_TRIG) = 0;                 //                set Rule to untriggered state
-                    }
+                    TF(QRF_STATE_TRIG) = 0;                     //            set Rule to untriggered state
                 } else {                                        //        Else:
-                    currentRule->triggerHoldOffCounter--;       //            decrement holdOff time
+                                                                //            decrement holdOff time
+                    currentRule->triggerHoldOffCounter -= DEBOUNCER_READ_PERIOD;
                 }
             } else {                                            //    If it is not triggered:
-                if ( HWREGBITB(&g_SwitchStateToggled.charValues[bIndex],
-                        pinIndex) || TF(QRF_LEVEL_TRIG)) {      // Check if pin toggled (skip if level triggered)
-                    if (pinValue == TF(QRF_TRIG_EDGE_POS)) {    //    Check if the edge matches
+                if ( HWREGBITB( &g_SwitchStateToggled.charValues[bIndex], pinIndex ) ) {      // Check if pin toggled
+                    if ( pinValue == TF(QRF_TRIG_EDGE_POS) ) {  //    Check if the edge matches
                         TF( QRF_STATE_TRIG ) = 1;               //      Set Rule to triggered state
-                        currentRule->triggerHoldOffCounter =
-                                currentRule->triggerHoldOffTime;
-                        UARTprintf("%22s: [%d] Triggered, Outp. set\n",
-                                "processQuickRules()", i);
-                        setPCFOutput(currentRule->outputDriverId,
-                                currentRule->tPulse, currentRule->pwmHigh,
-                                currentRule->pwmLow);
+                        currentRule->triggerHoldOffCounter = currentRule->triggerHoldOffTime;
+                        UARTprintf( "%22s: [%d] Triggered, Outp. set\n", "processQuickRules()", i );
+                        setPCFOutput( currentRule->outputDriverId,
+                                      currentRule->tPulse, currentRule->pwmHigh,
+                                      currentRule->pwmLow );
                     }
                 }
             }
@@ -390,7 +379,7 @@ void enableQuickRule(uint8_t id) {
 void setupQuickRule(uint8_t id, t_outputBit inputSwitchId,
         t_outputBit outputDriverId, uint16_t triggerHoldOffTime,
         uint16_t tPulse, uint8_t pwmHigh, uint8_t pwmLow,
-        bool trigPosEdge, bool outOffOnRelease, bool levelTriggered) {
+        bool trigPosEdge) {
 //    Notes:
 //     `checkToggle`     = False disables edge detecion and triggers on levels
 //     `outOffOnRelease` = True  stays in triggered state and waits for a low level. Then disables the outputs and arms the trigger again
@@ -405,8 +394,6 @@ void setupQuickRule(uint8_t id, t_outputBit inputSwitchId,
     currentRule->tPulse = tPulse;
     currentRule->triggerHoldOffTime = triggerHoldOffTime;
     TF( QRF_TRIG_EDGE_POS ) = trigPosEdge;
-    TF( QRF_OFF_ON_RELASE ) = outOffOnRelease;
-    TF( QRF_LEVEL_TRIG ) = levelTriggered;
     TF( QRF_ENABLED ) = 1;
 }
 
@@ -429,12 +416,14 @@ void taskDebouncer(void *pvParameters) {
             // Run debounce algo (14 us)
             debounceAlgo( g_SwitchStateSampled.longValues, g_SwitchStateDebounced.longValues, g_SwitchStateToggled.longValues);
             // Notify Mission pinball over serial port of all changed switches
-            reportSwitchStates();
+            if( g_reportSwitchEvents ){
+                reportSwitchStates();
+            }
             processQuickRules();
 //            ticks = stopTimer();
 //            UARTprintf("readSwitchMatrix() %d ticks\n", ticks );
             //Run every 3 ms (333 Hz) --> 12 ms debounce latency
-            vTaskDelayUntil(&xLastWakeTime, 3);
+            vTaskDelayUntil(&xLastWakeTime, DEBOUNCER_READ_PERIOD);
 //            startTimer();
             //Start background I2C scanner (takes ~ 600 us)
             i2cStartPCFL8574refresh();

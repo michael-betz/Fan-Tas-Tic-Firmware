@@ -16,6 +16,8 @@
 #define PCF_MAX_PER_CHANNEL 8
 // Lowest possible I2C Address of a PCF8574 IO extender (all address pins low)
 #define PCF_LOWEST_ADDR 0x20
+// Read all PCF inputs and process quickRules every xxx ms
+#define DEBOUNCER_READ_PERIOD 3
 // How many uint32_t values to express all the input states
 #define N_LONGS sizeof(t_switchState)/sizeof(uint32_t)
 // How many uint8_t  values to express all the input states
@@ -27,8 +29,6 @@
 
 // * Flags for quick-fire rules *
 #define QRF_TRIG_EDGE_POS 0
-#define QRF_OFF_ON_RELASE 1
-#define QRF_LEVEL_TRIG    2
 #define QRF_ENABLED		  3
 #define QRF_STATE_TRIG    4
 
@@ -43,7 +43,7 @@
 // So each delay call should do ... delay units:
 // (40000 - 530)/54/3 = 244
 // 200 --> Switch matrix has ~ 8 us to settle
-#define SM_COL_DELAY_CNT 200
+#define SM_COL_DELAY_CNT 150
 
 
 //*****************************************************************************
@@ -80,12 +80,12 @@ typedef struct {
 typedef struct {
     t_outputBit inputSwitchId;      // hwIndex specifying the input switch
     uint8_t triggerFlags;           // ([0] enable/disable, [1] trigger on positive/negative edge, [2] disable ouput on release, [4] check toggle)
-    uint16_t triggerHoldOffTime;    // post trigger hold-off time [ms]
-    uint16_t triggerHoldOffCounter; // Counts down each tick
+    int16_t triggerHoldOffTime;     // post trigger hold-off time [ms]
+    int16_t triggerHoldOffCounter;  // Counts down each tick
     t_outputBit outputDriverId;     // hwIndex specifying the driver output ID
-    uint16_t tPulse;                // pulse duration [ms]
-    uint16_t pwmHigh;                // power level during tPulse [0 - 15] for I2C, [0-MAX_PWM] for HWpwm
-    uint16_t pwmLow;                 // power level after  tPulse [0 - 15] for I2C, [0-MAX_PWM] for HWpwm
+    int16_t tPulse;                 // pulse duration [ms]
+    uint16_t pwmHigh;               // power level during tPulse [0 - 15] for I2C, [0-MAX_PWM] for HWpwm
+    uint16_t pwmLow;                // power level after  tPulse [0 - 15] for I2C, [0-MAX_PWM] for HWpwm
 } t_quickRule;
 
 // State of a pulsed solenoid driver output pin
@@ -127,8 +127,7 @@ void taskDebouncer(void *pvParameters);
 
 void setupQuickRule(uint8_t id, t_outputBit inputSwitchId,
         t_outputBit outputDriverId, uint16_t triggerHoldOffTime,
-        uint16_t tPulse, uint8_t pwmHigh, uint8_t pwmLow, bool trigPosEdge,
-        bool outOffOnRelease, bool checkToggle);
+        uint16_t tPulse, uint8_t pwmHigh, uint8_t pwmLow, bool trigPosEdge );
 void enableQuickRule(uint8_t id);
 void disableQuickRule(uint8_t id);
 

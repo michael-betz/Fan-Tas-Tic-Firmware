@@ -21,7 +21,7 @@
 #include "task.h"
 #include "queue.h"
 #include "myTasks.h"
-
+#include "main.h"
 
 //*****************************************************************************
 // Handles CDC driver notifications related to control and setup of the device.
@@ -40,8 +40,11 @@ uint32_t ControlHandler(void *pvCBData, uint32_t ui32Event, uint32_t ui32MsgValu
         case USB_EVENT_CONNECTED:						// Flush our buffers.
             USBBufferFlush(&g_sTxBuffer);
             USBBufferFlush(&g_sRxBuffer);
+            UARTprintf("%22s: USB connected\n", "ControlHandler()");
             break;
         case USB_EVENT_DISCONNECTED:					// The host has disconnected.
+            UARTprintf("%22s: USB disconnected\n", "ControlHandler()");
+            break;
         case USBD_CDC_EVENT_GET_LINE_CODING:			// Return the current serial communication parameters.
         case USBD_CDC_EVENT_SET_LINE_CODING:			// Set the current serial communication parameters.
         case USBD_CDC_EVENT_SET_CONTROL_LINE_STATE:		// Set the current serial communication parameters.

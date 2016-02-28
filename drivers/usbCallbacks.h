@@ -13,5 +13,4 @@ uint32_t TxHandler(void *pvCBData, uint32_t ui32Event, uint32_t ui32MsgValue, vo
 uint32_t RxHandler( void *pvCBData, uint32_t ui32Event, uint32_t ui32MsgValue, void *pvMsgData );
 
 
-
 #endif /* USBDRIVER_USBCALLBACKS_H_ */

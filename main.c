@@ -106,12 +106,17 @@ void initGpio(){
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
-    // Unlock NMI to use PD7 as normal GPIO
+    // Unlock NMI to use PD7 as normal GPIO (not needed asPD7 is configured as GPIO input by default)
     HWREG(GPIO_PORTD_BASE + GPIO_O_LOCK) = GPIO_LOCK_KEY;
     HWREG(GPIO_PORTD_BASE + GPIO_O_CR) |= 0x80;
     HWREG(GPIO_PORTD_BASE + GPIO_O_AFSEL) &= ~0x80;
     HWREG(GPIO_PORTD_BASE + GPIO_O_DEN) |= 0x80;
     HWREG(GPIO_PORTD_BASE + GPIO_O_LOCK) = 0;
+    // Configure Switch matrix inputs
+    ROM_GPIOPinTypeGPIOInput( GPIO_PORTE_BASE, GPIO_PIN_3 | GPIO_PIN_2 | GPIO_PIN_1 );
+    ROM_GPIOPinTypeGPIOInput( GPIO_PORTC_BASE, GPIO_PIN_7 | GPIO_PIN_6 );
+    ROM_GPIOPinTypeGPIOInput( GPIO_PORTD_BASE, GPIO_PIN_7 | GPIO_PIN_6 );
+    ROM_GPIOPinTypeGPIOInput( GPIO_PORTF_BASE, GPIO_PIN_4 );
     // Configure GPIO Pins for UART mode (usb debug terminal).
     ROM_GPIOPinConfigure(GPIO_PA0_U0RX);
     ROM_GPIOPinConfigure(GPIO_PA1_U0TX);
@@ -216,14 +221,7 @@ int main(void) {
     uint8_t i,j,z=0;
     // Set the clocking to run at 80 MHz from the PLL.
     ROM_SysCtlClockSet( SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN );
-    // Init GPIO pins
-    initGpio();
-//    while(1){
-//        ledOut( 0xFF );
-//        SysCtlDelay( 1000000 );
-//        ledOut( 0x00 );
-//        SysCtlDelay( 1000000 );
-//    }
+    initGpio();         // Init GPIO pins
     configureTimer();   //Init debugh HW timer for measuring processor cycles (%timeit)
     initMyI2C();        //Init the 4 I2C hardware channels
     //  -------------------------------------------------------
@@ -234,7 +232,7 @@ int main(void) {
     //  -------------------------------------------------------
     for (i=0; i<=3; i++) {            // For each I2C channel
         for (j=0x20; j<=0x27; j++) {  // For each PCFL I2C addr.
-            ts_i2cTransfer( i, j, &z, 1, NULL, 0, NULL, NULL ); //Send 0x00
+            I2CMRead(&g_sI2CInst[i], j, &z, 1, NULL, 0, NULL, NULL); //Send 0x00
         }
     }
     spiSetup();         //Init 3 SPI channels for setting ws2811 LEDs

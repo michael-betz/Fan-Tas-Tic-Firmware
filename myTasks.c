@@ -56,6 +56,7 @@ SemaphoreHandle_t g_MutexCustomI2C = NULL;
 uint16_t g_customI2CnBytesRx;
 uint8_t g_customI2CrxBuffer[CUSTOM_I2C_BUF_LEN];
 uint8_t g_customI2Cstate;
+uint8_t g_reportSwitchEvents = 0;
 
 //*****************************************************************************
 // Command parser
@@ -64,11 +65,11 @@ uint8_t g_customI2Cstate;
 tCmdLineEntry g_psCmdTable[] = {
         { "?",     Cmd_help, ": Display list of commands" },
         { "*IDN?", Cmd_IDN,  ": Display ID and version info" },
+        { "SWE",   Cmd_SWE,  ": <OnOff> En./Dis. reporting of switch events." },
         { "SW?",   Cmd_SW,   ": Return the state of ALL switches (40 bytes)" },
         { "OUT",   Cmd_OUT,  ": <hwIndex> <PWMlow> [tPulse] [PWMhigh]" },
-        { "RUL",   Cmd_RUL,  ": <ID> <IDin> <IDout> <trHoldOff> <tPulse>\n        <pwmOn> <pwmOff> <bPosEdge> <bAutoOff> <bLevelTr>" },
-        { "RULE",  Cmd_RULE, ": Enable  a previously disabled rule: RULE <ID>" },
-        { "RULD",  Cmd_RULD, ": Disable a previously defined rule:  RULD <ID>" },
+        { "RUL",   Cmd_RUL,  ": <ID> <IDin> <IDout> <trHoldOff>\n        <tPulse> <pwmOn> <pwmOff> <bPosEdge>" },
+        { "RULE",  Cmd_RULE, ": En./Dis a prev. def. rule: RULE <ID> <OnOff>" },
         { "LEC",   Cmd_LEC,  ": <channel> <spiSpeed [Hz]> [frameFmt]" },
         { "LED",   Cmd_LED,  ": <channel> <nBytes>\\n<binary blob of nBytes>" },
         { "I2C",   Cmd_I2C,  ": <channel> <I2Caddr> <sendData> <nBytesRx>" },
@@ -298,8 +299,8 @@ void ts_usbSend(uint8_t *data, uint16_t len) {
     if (freeSpace >= len) {
         USBBufferWrite(&g_sTxBuffer, data, len);
     } else {
-        UARTprintf("%22s: Not enough space in USB TX buffer! Need %d have %d. <FLUSH>\n",
-                "ts_usbSend()", len, freeSpace);
+//        UARTprintf("%22s: Not enough space in USB TX buffer! Need %d have %d. <FLUSH>\n",
+//                "ts_usbSend()", len, freeSpace);
         USBBufferFlush( &g_sTxBuffer );
     }
     taskEXIT_CRITICAL();
@@ -411,33 +412,37 @@ int Cmd_OUT(int argc, char *argv[]) {
     return (0);
 }
 
-int Cmd_RULE(int argc, char *argv[]) {
-    //Enable a quickfire rule
-    uint8_t id;
+int Cmd_SWE(int argc, char *argv[]) {
+    //Enable / Disable the reporting of Switch Events
+    uint8_t onOff;
     if (argc == 2) {
-        id = ustrtoul(argv[1], NULL, 0);
-        if (id >= MAX_QUICK_RULES) {
-            UARTprintf("%22s: quickRuleId must be < %d\n", "Cmd_RULE()",
-                    MAX_QUICK_RULES);
-            return 0;
+        onOff = ustrtoul(argv[1], NULL, 0);
+        if( onOff ){
+            g_reportSwitchEvents = 1;
+        } else {
+            g_reportSwitchEvents = 0;
         }
-        enableQuickRule(id);
         return (0);
     }
     return CMDLINE_TOO_FEW_ARGS;
 }
 
-int Cmd_RULD(int argc, char *argv[]) {
-    //Disable a quickfire rule
-    uint8_t id;
-    if (argc == 2) {
+int Cmd_RULE(int argc, char *argv[]) {
+    //Enable / Disable a quickfire rule
+    uint8_t id, onOff;
+    if (argc == 3) {
         id = ustrtoul(argv[1], NULL, 0);
+        onOff = ustrtoul(argv[2], NULL, 0);
         if (id >= MAX_QUICK_RULES) {
-            UARTprintf("%22s: quickRuleId must be < %d\n", "Cmd_RULD()",
+            UARTprintf("%22s: quickRuleId must be < %d\n", "Cmd_RULE()",
                     MAX_QUICK_RULES);
             return 0;
         }
-        disableQuickRule(id);
+        if( onOff ){
+            enableQuickRule(id);
+        } else {
+            disableQuickRule(id);
+        }
         return (0);
     }
     return CMDLINE_TOO_FEW_ARGS;
@@ -453,18 +458,16 @@ int Cmd_RUL(int argc, char *argv[]) {
 //  * pulse pwm [only for output ID 0-3 which are the pwm channels]
 //  * hold pwm  [only for output ID 0-3 which are the pwm channels]
 //  * Enable trigger on pos edge?
-//  * Enable auto. output off once input releases
-//  * Enable level Trigger (no edge check)
 //  ------------------
 //   Example command:
 //  ------------------
-//  RUL ID IDin IDout trHoldOff tPulse pwmOn pwmOff bPosEdge bAutoOff bLevelTr
-//  RUL 0 0x23 0x100 4 1 15 3 1 0 0
+//  RUL ID IDin IDout trHoldOff tPulse pwmOn pwmOff bPosEdge
+//  RUL 0 0x23 0x100 4 1 15 3 1
     uint8_t id, pwmHigh, pwmLow;
     uint16_t triggerHoldOffTime, tPulse;
     t_outputBit inputSwitchId, outputDriverId;
-    bool trigPosEdge, outOffOnRelease, levelTriggered;
-    if (argc == 11) {
+    bool trigPosEdge;
+    if (argc == 9) {
         id = ustrtoul(argv[1], NULL, 0);
         if (id >= MAX_QUICK_RULES) {
             UARTprintf("%22s: quickRuleId must be < %d\n", "Cmd_RUL()",
@@ -494,12 +497,9 @@ int Cmd_RUL(int argc, char *argv[]) {
             return 0;
         }
         trigPosEdge = ustrtoul(argv[8], NULL, 0) == 1;
-        outOffOnRelease = ustrtoul(argv[9], NULL, 0) == 1;
-        levelTriggered = ustrtoul(argv[10], NULL, 0) == 1;
         UARTprintf("%22s: Setting up autofiring rule %d\n", "Cmd_RUL()", id);
-        setupQuickRule(id, inputSwitchId, outputDriverId, triggerHoldOffTime,
-                tPulse, pwmHigh, pwmLow, trigPosEdge, outOffOnRelease,
-                levelTriggered);
+        setupQuickRule( id, inputSwitchId, outputDriverId, triggerHoldOffTime,
+                tPulse, pwmHigh, pwmLow, trigPosEdge );
         return (0);
     }
     return CMDLINE_TOO_FEW_ARGS;
