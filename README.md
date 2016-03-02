@@ -99,6 +99,7 @@ input characters, status messages or errors, which makes it easier to talk to pr
         ?     : Display list of commands
         *IDN? : Display ID and version info
         SWE   : <OnOff> En./Dis. reporting of switch events.
+        DEB   : <hwIndex> <OnOff> En./Dis. 12 ms debouncing
         SW?   : Return the state of ALL switches (40 bytes)
         OUT   : <hwIndex> <PWMlow> [tPulse] [PWMhigh]
         RUL   : <ID> <IDin> <IDout> <trHoldOff> <tPulse>
@@ -109,17 +110,32 @@ input characters, status messages or errors, which makes it easier to talk to pr
         I2C   : <channel> <I2Caddr> <sendData> <nBytesRx>
 
 
-## Switch events
+## `SWE` enables the reporting of Switch events
 When a switch input flips its state, its hwIndex and new state is immediately reported on the USB serial port.
 This feature is disabled by default and needs to be enabled with the `SWE 1\n` command.
 
 __Example__
 
-The input with hwIndex 0x0F8 changed to 1, 0x0FC changed to 0 and 0x0FE changed to 1
+Sent:
+
+        SWE 1\n
+
+Afterwards, the input with hwIndex 0x0F8 changed to 1, 0x0FC changed to 0 and 0x0FE changed to 1
  
 Received:
 
         SE:0f8=1 0fa=1 0fc=0 0fe=1\n
+
+## `DEB` disables the debouncing timer for certain inputs
+By default, each input is buffered by a deboucning timer, which recognizes a change in input level only after it has been kept stable for 12 ms. This can be disabled to minimize input latency (for example for jet bumpers).
+ 
+ __Example__
+ 
+ Sent:
+ 
+         DEB 0x0012 0\n
+         
+Disables debouncing for the input with `hwIndex` 0x0012.
 
 ## `SW?` returns the state of all Switch inputs
 Returns 40 bytes as 8 digit hex numbers. This encodes all 320 bits which can be addressed by a hwIndex.
