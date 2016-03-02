@@ -66,6 +66,7 @@ tCmdLineEntry g_psCmdTable[] = {
         { "?",     Cmd_help, ": Display list of commands" },
         { "*IDN?", Cmd_IDN,  ": Display ID and version info" },
         { "SWE",   Cmd_SWE,  ": <OnOff> En./Dis. reporting of switch events." },
+        { "DEB",   Cmd_DEB,  ": <hwIndex> <OnOff> En./Dis. 12 ms debouncing" },
         { "SW?",   Cmd_SW,   ": Return the state of ALL switches (40 bytes)" },
         { "OUT",   Cmd_OUT,  ": <hwIndex> <PWMlow> [tPulse] [PWMhigh]" },
         { "RUL",   Cmd_RUL,  ": <ID> <IDin> <IDout> <trHoldOff>\n        <tPulse> <pwmOn> <pwmOff> <bPosEdge>" },
@@ -351,6 +352,32 @@ int Cmd_SW(int argc, char *argv[]) {
     ts_usbSend((uint8_t*) outBuffer, charsWritten+1 );
     return (0);
 }
+
+int Cmd_DEB(int argc, char *argv[]) {
+    //Enable / Disable the 12 ms debouncing timer for an input
+    uint16_t hwIndex;
+    uint8_t onOff;
+    t_outputBit inputSwitchId;
+    if (argc == 3) {
+        hwIndex = ustrtoul(argv[1], NULL, 0);
+        onOff = ustrtoul(argv[2], NULL, 0);     // 1: Debouncing ON
+        inputSwitchId = decodeHwIndex( hwIndex, 1 );
+        if ( inputSwitchId.hwIndexType==HW_INDEX_INVALID ) {
+            UARTprintf( "%22s: inputSwitchId = %s invalid\n", "Cmd_DEB()", argv[1] );
+            return 0;
+        }
+        if( onOff ){
+            // Reset noDebounce Flag
+            HWREGBITB( &g_SwitchStateNoDebounce.charValues[inputSwitchId.byteIndex], inputSwitchId.pinIndex ) = 0;
+        } else {
+            // Set noDebounce Flag
+            HWREGBITB( &g_SwitchStateNoDebounce.charValues[inputSwitchId.byteIndex], inputSwitchId.pinIndex ) = 1;
+        }
+        return (0);
+    }
+    return CMDLINE_TOO_FEW_ARGS;
+}
+
 
 int Cmd_OUT(int argc, char *argv[]) {
 //    OUT <hwIndex> <PWMlow> <tPulse> <PWMhigh>   or OUT <hwIndex> <PWMvalue>

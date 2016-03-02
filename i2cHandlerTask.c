@@ -41,9 +41,10 @@ uint8_t g_i2cReadStates[4][PCF_MAX_PER_CHANNEL];     //All Error codes of last I
 t_switchStateConverter g_SwitchStateSampled;         //Read values of last I2C scan
 t_switchStateConverter g_SwitchStateDebounced;       //Debounced values (the same after 4 reads)
 t_switchStateConverter g_SwitchStateToggled;         //Bits which changed
+t_switchStateConverter g_SwitchStateNoDebounce;      //Debouncing-OFF flags
 
 // Stuff for synchronizing TI I2C driver with freeRtos `read inputs` task
-volatile uint8_t g_readCounter = 0;                  // I2C read finished when g_readCounter == 4*MAX_PCLS_PER_CHANNEL
+volatile uint8_t g_readCounter = 0;                  // I2C read finished when g_readCounter == 0
 static TaskHandle_t xTaskToNotifyI2CscanDone = NULL; //send freeRtos task notification there once i2c scan is done
 
 // Arrays to keep track of timed output pin states and quick-fire rules
@@ -228,51 +229,63 @@ void i2cDoneCallback(void* pvCallbackData, uint_fast8_t ui8Status) {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     uint8_t *tempReadState = pvCallbackData;
     *tempReadState = ui8Status;
-    g_readCounter++;
-    if (g_readCounter >= 4 * PCF_MAX_PER_CHANNEL) {
+    g_readCounter--;            //Incremented by each started I2C job, decremented by each callback
+    if ( g_readCounter == 0 ) { //done with all jobs
         configASSERT( xTaskToNotifyI2CscanDone != NULL );
-        vTaskNotifyGiveFromISR(xTaskToNotifyI2CscanDone,
-                &xHigherPriorityTaskWoken);
-        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        vTaskNotifyGiveFromISR( xTaskToNotifyI2CscanDone, &xHigherPriorityTaskWoken );
+        portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
     }
 }
 
 // Reads out 1 byte from the address range 0x20 - 0x27 (where PCFL can be) from all 4 I2C channels.
 // Interrupt driven and runs in background. Writes to the global data and state arrays
 //    Finished when g_readCounter == 4*MAX_PCLS_PER_CHANNEL
+// The I2C status of a read is stored in the 2D array [channel][ADR] g_i2cReadStates
+// Only the inputs are read which have not previously reported an I2C error
+// e.g., the ones which are actually connected!
+// @ToDo: only disable inputs on specific I2C error, which comes up when there is no dev. connected (maybe I2CM_STATUS_ADDR_NACK or I2CM_STATUS_ARB_LOST)
 void i2cStartPCFL8574refresh() {
-    uint8_t i;
-    g_readCounter = 0;
+    uint8_t nPcf, nChannel, lastState;
+    configASSERT( g_readCounter == 0 );
     configASSERT( xTaskToNotifyI2CscanDone == NULL );
     xTaskToNotifyI2CscanDone = xTaskGetCurrentTaskHandle();
-    for (i = 0; i <= PCF_MAX_PER_CHANNEL - 1; i++) {
-        ts_i2cTransfer(0, PCF_LOWEST_ADDR + i, NULL, 0,
-                g_SwitchStateSampled.switchState.i2cReadData[0], 1,
-                i2cDoneCallback, &g_i2cReadStates[0][i]);
-        ts_i2cTransfer(1, PCF_LOWEST_ADDR + i, NULL, 0,
-                g_SwitchStateSampled.switchState.i2cReadData[1], 1,
-                i2cDoneCallback, &g_i2cReadStates[1][i]);
-        ts_i2cTransfer(2, PCF_LOWEST_ADDR + i, NULL, 0,
-                g_SwitchStateSampled.switchState.i2cReadData[2], 1,
-                i2cDoneCallback, &g_i2cReadStates[2][i]);
-        ts_i2cTransfer(3, PCF_LOWEST_ADDR + i, NULL, 0,
-                g_SwitchStateSampled.switchState.i2cReadData[3], 1,
-                i2cDoneCallback, &g_i2cReadStates[3][i]);
+    for (nPcf = 0; nPcf <= PCF_MAX_PER_CHANNEL - 1; nPcf++) {
+        for ( nChannel = 0; nChannel <= 3; nChannel++ ) {
+            lastState = g_i2cReadStates[nChannel][nPcf];
+            // If previous read succeeded
+            if( lastState==I2CM_STATUS_SUCCESS || lastState==I2CM_STATUS_DATA_NACK ){
+                g_readCounter++;
+                ts_i2cTransfer( nChannel, PCF_LOWEST_ADDR + nPcf, NULL, 0, g_SwitchStateSampled.switchState.i2cReadData[nChannel], 1, i2cDoneCallback, &g_i2cReadStates[nChannel][nPcf] );
+            }
+        }
     }
 }
 
-void debounceAlgo(uint32_t *sample, uint32_t *state, uint32_t *toggle) {
+void debounceAlgo( uint32_t *sample, uint32_t *state, uint32_t *toggle, uint32_t *noDebounce ) {
 //  Takes the switch state as uint32_t array of length N_LONGS
 //    Uses a 2 bit vertical counter algorithm to debounce each bit (needs 4 ticks)
 //    toggle is an array indicating which bits changed
+//  t:         t+1:
+//  cnt1 cnt0  cnt1 cnt0 delta toggle noDebounce
+//     0    0     0    0     0      0          0
+//     0    0     0    1     1      0          0
+//     0    1     1    0     1      0          0
+//     1    0     1    1     1      0          0
+//     1    1     0    0     1      1          0
+// Setting the noDebounce flag
+//     0    0     0    0     0      0          1
+//     0    0     0    0     1      1          1
     uint8_t i;
     static uint32_t cnt0[N_LONGS], cnt1[N_LONGS];
     uint32_t delta[N_LONGS];
     for (i = 0; i < N_LONGS; i++) {
-        delta[i] = sample[i] ^ state[i];
-        cnt1[i] = (cnt1[i] ^ cnt0[i]) & delta[i];
-        cnt0[i] = ~(cnt0[i]) & delta[i];
-        toggle[i] = delta[i] & ~(cnt0[i] | cnt1[i]);
+        delta[i] = sample[i] ^ state[i];               //Bits which are different to currently accepted state
+                                                       //All bits of counter are reset if delta = 0
+        cnt1[i]   = delta[i] &    (cnt1[i] ^ cnt0[i]); //Increment MSB if delta is SET, otherwise reset it
+        cnt0[i]   = delta[i] &   ~(cnt0[i]);           //Increment LSB if delta is SET, otherwise reset it
+        //Trigger condition 1: delta must be SET and both cnt must be zero (debounce counter overflow)
+        //Trigger condition 2: delta must be SET and noDebounce overwrite must be SET
+        toggle[i] = delta[i] & ( ~(cnt0[i]|cnt1[i]) | noDebounce[i] );
         state[i] ^= toggle[i];
     }
 }
@@ -414,7 +427,7 @@ void taskDebouncer(void *pvParameters) {
     while (1) {
         if (ulTaskNotifyTake( pdTRUE, portMAX_DELAY)) {    // Wait for i2c scanner ISR to finish
             // Run debounce algo (14 us)
-            debounceAlgo( g_SwitchStateSampled.longValues, g_SwitchStateDebounced.longValues, g_SwitchStateToggled.longValues);
+            debounceAlgo( g_SwitchStateSampled.longValues, g_SwitchStateDebounced.longValues, g_SwitchStateToggled.longValues, g_SwitchStateNoDebounce.longValues );
             // Notify Mission pinball over serial port of all changed switches
             if( g_reportSwitchEvents ){
                 reportSwitchStates();
@@ -445,7 +458,7 @@ t_outputBit decodeHwIndex(uint16_t hwIndex, uint8_t asInput) {
     //-----------------------------------------
     // Check for HW. PWM outputs (60 - 63)
     //-----------------------------------------
-    if( asInput && hwIndex >= 60 && hwIndex <= 63 ){
+    if( (!asInput) && (hwIndex>=60) && (hwIndex<=63) ){
         tempResult.hwIndexType = HW_INDEX_HWPWM;// Note: only pinIndex is valid. Identifies the HW pwmChannel!
         tempResult.pinIndex = hwIndex - 60;
         tempResult.i2cAddress = 0;

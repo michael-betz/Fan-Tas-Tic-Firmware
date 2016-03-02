@@ -43,7 +43,7 @@
 // So each delay call should do ... delay units:
 // (40000 - 530)/54/3 = 244
 // 200 --> Switch matrix has ~ 8 us to settle
-#define SM_COL_DELAY_CNT 150
+#define SM_COL_DELAY_CNT 100
 
 
 //*****************************************************************************
@@ -112,6 +112,7 @@ extern tI2CMInstance g_sI2CInst[4];
 extern t_switchStateConverter g_SwitchStateSampled;	    //Read values of last I2C scan
 extern t_switchStateConverter g_SwitchStateDebounced;   //Debounced values (the same after 4 reads)
 extern t_switchStateConverter g_SwitchStateToggled;		//Bits which changed
+extern t_switchStateConverter g_SwitchStateNoDebounce;  //Debouncing-OFF flags
 extern t_quickRule g_QuickRuleList[MAX_QUICK_RULES];	//List of Quickrules
 
 //*****************************************************************************

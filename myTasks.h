@@ -40,6 +40,7 @@ extern int Cmd_help(int argc, char *argv[]);
 extern int Cmd_IDN(int argc, char *argv[]);
 extern int Cmd_SW(int argc, char *argv[]);
 extern int Cmd_SWE(int argc, char *argv[]);
+extern int Cmd_DEB(int argc, char *argv[]);
 extern int Cmd_OUT(int argc, char *argv[]);
 extern int Cmd_RUL(int argc, char *argv[]);
 extern int Cmd_RULE(int argc, char *argv[]);
