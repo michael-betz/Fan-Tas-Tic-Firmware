@@ -127,7 +127,7 @@ void taskDebouncer(void *pvParameters);
 
 void setupQuickRule(uint8_t id, t_outputBit inputSwitchId,
         t_outputBit outputDriverId, uint16_t triggerHoldOffTime,
-        uint16_t tPulse, uint8_t pwmHigh, uint8_t pwmLow, bool trigPosEdge );
+        uint16_t tPulse, uint16_t pwmHigh, uint16_t pwmLow, bool trigPosEdge );
 void enableQuickRule(uint8_t id);
 void disableQuickRule(uint8_t id);
 

@@ -378,7 +378,7 @@ void enableQuickRule(uint8_t id) {
 
 void setupQuickRule(uint8_t id, t_outputBit inputSwitchId,
         t_outputBit outputDriverId, uint16_t triggerHoldOffTime,
-        uint16_t tPulse, uint8_t pwmHigh, uint8_t pwmLow,
+        uint16_t tPulse, uint16_t pwmHigh, uint16_t pwmLow,
         bool trigPosEdge) {
 //    Notes:
 //     `checkToggle`     = False disables edge detecion and triggers on levels
@@ -441,17 +441,24 @@ t_outputBit decodeHwIndex(uint16_t hwIndex) {
 // Meaning of byteIndex:  HW_INDEX_SWM: column,  HW_INDEX_I2Cn: right shited I2C address
     int16_t i2cCh;
     t_outputBit tempResult;
+    if( hwIndex >= 60 && hwIndex <= 63 ){       // Special case: hwIndex 60 - 63 are HW PWM outputs
+        tempResult.hwIndexType = HW_INDEX_HWPWM;// Note: only pinIndex is valid. Identifies the HW pwmChannel!
+        tempResult.pinIndex = hwIndex - 60;
+        tempResult.i2cAddress = 0;
+        tempResult.i2cChannel = 100;            // I2C channel 100 is reserved for HW PWM
+        return tempResult;
+    }
     tempResult.byteIndex = hwIndex / 8;
-    tempResult.pinIndex = hwIndex % 8;    // Which bit of the byte is addressed
+    tempResult.pinIndex = hwIndex % 8;      // Which bit of the byte is addressed
     tempResult.i2cChannel = -1;
-    if (tempResult.byteIndex <= 7) {// byteIndex 0 - 7 are Switch Matrix addresses
+    if (tempResult.byteIndex <= 7) {        // byteIndex 0 - 7 are Switch Matrix addresses
         tempResult.hwIndexType = HW_INDEX_SWM;
         return tempResult;
     }
-    i2cCh = (tempResult.byteIndex - 8) / 8;    // Only i2c channel 0-3 exists
+    i2cCh = (tempResult.byteIndex - 8) / 8; // Only i2c channel 0-3 exists
     if (i2cCh <= 3) {
         tempResult.hwIndexType = HW_INDEX_I2C;
-        tempResult.i2cChannel = i2cCh;//I2C address, each channel has address 0x20 - 0x27
+        tempResult.i2cChannel = i2cCh;      //I2C address, each channel has address 0x20 - 0x27
         tempResult.i2cAddress = (tempResult.byteIndex - 8) % 8 + PCF_LOWEST_ADDR;
         return tempResult;
     }

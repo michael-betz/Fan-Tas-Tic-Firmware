@@ -371,14 +371,7 @@ int Cmd_OUT(int argc, char *argv[]) {
         return( CMDLINE_TOO_FEW_ARGS );
     }
     hwIndex = ustrtoul(argv[1], NULL, 0);
-    if( hwIndex >= 60 && hwIndex <= 63 ){        // Special case: hwIndex 60 - 63 are HW PWM outputs
-        outLocation.hwIndexType = HW_INDEX_HWPWM;// Note: only pinIndex is valid. Identifies the HW pwmChannel!
-        outLocation.pinIndex = hwIndex - 60;
-        outLocation.i2cAddress = 0;
-        outLocation.i2cChannel = 100;            // I2C channel 100 is reserved for HW PWM
-    } else {                                     // We only have valid pwmValues from 0-15 for I2C.
-        outLocation = decodeHwIndex(hwIndex);
-    }
+    outLocation = decodeHwIndex(hwIndex);
     switch( outLocation.hwIndexType ){
     case HW_INDEX_I2C:
         if (pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM)) {
@@ -463,40 +456,48 @@ int Cmd_RUL(int argc, char *argv[]) {
 //  ------------------
 //  RUL ID IDin IDout trHoldOff tPulse pwmOn pwmOff bPosEdge
 //  RUL 0 0x23 0x100 4 1 15 3 1
-    uint8_t id, pwmHigh, pwmLow;
-    uint16_t triggerHoldOffTime, tPulse;
+    uint8_t id;
+    int16_t pwmHigh, pwmLow;
+    uint16_t triggerHoldOffTime, tPulse, hwIndex;
     t_outputBit inputSwitchId, outputDriverId;
     bool trigPosEdge;
     if (argc == 9) {
         id = ustrtoul(argv[1], NULL, 0);
+        triggerHoldOffTime = ustrtoul(argv[4], NULL, 0);
+        tPulse = ustrtoul(argv[5], NULL, 0);
+        pwmHigh = ustrtoul(argv[6], NULL, 0);
+        pwmLow = ustrtoul(argv[7], NULL, 0);
+        trigPosEdge = ustrtoul(argv[8], NULL, 0) == 1;
         if (id >= MAX_QUICK_RULES) {
             UARTprintf("%22s: quickRuleId must be < %d\n", "Cmd_RUL()",
                     MAX_QUICK_RULES);
             return 0;
         }
         inputSwitchId = decodeHwIndex(ustrtoul(argv[2], NULL, 0));
-        if (inputSwitchId.hwIndexType == HW_INDEX_INVALID) {
-            UARTprintf("%22s: inputSwitchId = %s invalid\n", "Cmd_RUL()",
-                    argv[2]);
+        if ( inputSwitchId.hwIndexType==HW_INDEX_INVALID || inputSwitchId.hwIndexType==HW_INDEX_HWPWM ) {
+            UARTprintf( "%22s: inputSwitchId = %s invalid\n", "Cmd_RUL()", argv[2] );
             return 0;
         }
-        outputDriverId = decodeHwIndex(ustrtoul(argv[3], NULL, 0));
-        if (outputDriverId.hwIndexType == HW_INDEX_INVALID
-                || outputDriverId.hwIndexType == HW_INDEX_SWM) {
-            UARTprintf("%22s: outputDriverId = %s invalid\n", "Cmd_RUL()",
-                    argv[3]);
+        hwIndex = ustrtoul(argv[3], NULL, 0);
+        outputDriverId = decodeHwIndex( hwIndex );
+        switch( outputDriverId.hwIndexType ){
+        case HW_INDEX_I2C:
+            if ( pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM) ) {
+                UARTprintf( "%22s: pwmValues must be < %d\n", "Cmd_RUL()", (1 << N_BIT_PWM) );
+                return 0;
+            }
+            break;
+        case HW_INDEX_HWPWM:
+            if ( pwmHigh > MAX_PWM || pwmLow > MAX_PWM ) {
+                UARTprintf( "%22s: HW pwmValues must be < %d\n", "Cmd_RUL()", MAX_PWM );
+                return(0);
+            }
+            break;
+        case HW_INDEX_INVALID:
+        case HW_INDEX_SWM:
+            UARTprintf( "%22s: outputDriverId = %s invalid\n", "Cmd_RUL()", argv[3] );
             return 0;
         }
-        triggerHoldOffTime = ustrtoul(argv[4], NULL, 0);
-        tPulse = ustrtoul(argv[5], NULL, 0);
-        pwmHigh = ustrtoul(argv[6], NULL, 0);
-        pwmLow = ustrtoul(argv[7], NULL, 0);
-        if (pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM)) {
-            UARTprintf("%22s: pwmValues must be < %d\n", "Cmd_RUL()",
-                    (1 << N_BIT_PWM));
-            return 0;
-        }
-        trigPosEdge = ustrtoul(argv[8], NULL, 0) == 1;
         UARTprintf("%22s: Setting up autofiring rule %d\n", "Cmd_RUL()", id);
         setupQuickRule( id, inputSwitchId, outputDriverId, triggerHoldOffTime,
                 tPulse, pwmHigh, pwmLow, trigPosEdge );
