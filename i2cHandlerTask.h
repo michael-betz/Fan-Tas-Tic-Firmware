@@ -131,7 +131,7 @@ void setupQuickRule(uint8_t id, t_outputBit inputSwitchId,
 void enableQuickRule(uint8_t id);
 void disableQuickRule(uint8_t id);
 
-t_outputBit decodeHwIndex(uint16_t hwIndex);
+t_outputBit decodeHwIndex( uint16_t hwIndex, uint8_t asInput );
 void setPCFOutput(t_outputBit outLocation, int16_t tPulse, uint16_t highPower, uint16_t lowPower);
 void taskPCFOutWriter(void *pvParameters);
 

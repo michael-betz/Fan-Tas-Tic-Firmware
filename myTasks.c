@@ -371,7 +371,7 @@ int Cmd_OUT(int argc, char *argv[]) {
         return( CMDLINE_TOO_FEW_ARGS );
     }
     hwIndex = ustrtoul(argv[1], NULL, 0);
-    outLocation = decodeHwIndex(hwIndex);
+    outLocation = decodeHwIndex( hwIndex, 0 );
     switch( outLocation.hwIndexType ){
     case HW_INDEX_I2C:
         if (pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM)) {
@@ -473,13 +473,13 @@ int Cmd_RUL(int argc, char *argv[]) {
                     MAX_QUICK_RULES);
             return 0;
         }
-        inputSwitchId = decodeHwIndex(ustrtoul(argv[2], NULL, 0));
-        if ( inputSwitchId.hwIndexType==HW_INDEX_INVALID || inputSwitchId.hwIndexType==HW_INDEX_HWPWM ) {
+        inputSwitchId = decodeHwIndex( ustrtoul(argv[2], NULL, 0), 1 );
+        if ( inputSwitchId.hwIndexType==HW_INDEX_INVALID ) {
             UARTprintf( "%22s: inputSwitchId = %s invalid\n", "Cmd_RUL()", argv[2] );
             return 0;
         }
         hwIndex = ustrtoul(argv[3], NULL, 0);
-        outputDriverId = decodeHwIndex( hwIndex );
+        outputDriverId = decodeHwIndex( hwIndex, 0 );
         switch( outputDriverId.hwIndexType ){
         case HW_INDEX_I2C:
             if ( pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM) ) {

@@ -11,7 +11,7 @@
 //*****************************************************************************
 // Defines
 //*****************************************************************************
-#define N_BIT_PWM 4
+#define N_BIT_PWM 3
 //#define CMD_PARSER_BUF_LEN (N_LEDS_MAX*3+28)   //Need 3072 for LED data blob of 1 channel
 #define CMD_PARSER_BUF_LEN 128                   //Most commands fit
 #define OUT_WRITER_LIST_LEN 32

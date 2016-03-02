@@ -436,12 +436,16 @@ void taskDebouncer(void *pvParameters) {
 //------------------------------------------------------
 // Functios to _WRITE_ to outputs
 //------------------------------------------------------
-t_outputBit decodeHwIndex(uint16_t hwIndex) {
+t_outputBit decodeHwIndex(uint16_t hwIndex, uint8_t asInput) {
 // Decode a hwIndex and fill the t_outputBit structure with details
+// asInput: is this supposed to be an input (1) or output (0)
 // Meaning of byteIndex:  HW_INDEX_SWM: column,  HW_INDEX_I2Cn: right shited I2C address
     int16_t i2cCh;
     t_outputBit tempResult;
-    if( hwIndex >= 60 && hwIndex <= 63 ){       // Special case: hwIndex 60 - 63 are HW PWM outputs
+    //-----------------------------------------
+    // Check for HW. PWM outputs (60 - 63)
+    //-----------------------------------------
+    if( asInput && hwIndex >= 60 && hwIndex <= 63 ){
         tempResult.hwIndexType = HW_INDEX_HWPWM;// Note: only pinIndex is valid. Identifies the HW pwmChannel!
         tempResult.pinIndex = hwIndex - 60;
         tempResult.i2cAddress = 0;
@@ -449,13 +453,23 @@ t_outputBit decodeHwIndex(uint16_t hwIndex) {
         return tempResult;
     }
     tempResult.byteIndex = hwIndex / 8;
-    tempResult.pinIndex = hwIndex % 8;      // Which bit of the byte is addressed
+    tempResult.pinIndex = hwIndex % 8;          // Which bit of the byte is addressed
     tempResult.i2cChannel = -1;
-    if (tempResult.byteIndex <= 7) {        // byteIndex 0 - 7 are Switch Matrix addresses
-        tempResult.hwIndexType = HW_INDEX_SWM;
+    //-----------------------------------------
+    // Check for a Switch Matrix Input (0 - 7)
+    //-----------------------------------------
+    if ( tempResult.byteIndex<=7 ) {
+        if( asInput ){                          // And hence must be an input !
+            tempResult.hwIndexType = HW_INDEX_SWM;
+            return tempResult;
+        }
+        tempResult.hwIndexType = HW_INDEX_INVALID;
         return tempResult;
     }
-    i2cCh = (tempResult.byteIndex - 8) / 8; // Only i2c channel 0-3 exists
+    //-----------------------------------------
+    // Check for I2C channel
+    //-----------------------------------------
+    i2cCh = (tempResult.byteIndex - 8) / 8;     // Only i2c channel 0-3 exists
     if (i2cCh <= 3) {
         tempResult.hwIndexType = HW_INDEX_I2C;
         tempResult.i2cChannel = i2cCh;      //I2C address, each channel has address 0x20 - 0x27
