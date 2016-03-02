@@ -13,10 +13,10 @@ Controller for Pinball machines based on an TM4C123G LaunchPad™ Evaluation Kit
 ## Software features 
  * Software can handle up to 320 channels which can be used as In- or Outputs
  * All In- / Outputs are identified by a 16 bit unique ID. No configuration necessary.
- * All Outputs support 4 bit PWM with > 125 Hz (using [binary code modulation](http://www.batsocks.co.uk/readme/art_bcm_1.htm))
+ * All Outputs support 3 bit PWM with > 250 Hz (using [binary code modulation](http://www.batsocks.co.uk/readme/art_bcm_1.htm) over I2C)
  * All inputs are debounced and read 333 times per second. A switch toggles after keeping its state for 4 ticks (12 ms).
- * The timing for the WS2811 LEDs is strictly within spec by using the hardware SPI module and DMA transfers.
- * Software easily extendable by running [FreeRTOS](http://www.freertos.org/)
+ * The timing for the WS2811 LEDs is kept within spec by using the hardware SPI module and DMA transfers.
+ * Software is based on [FreeRTOS](http://www.freertos.org/) and therefore easily extendable.
 
 # Digital inputs / outputs
 
@@ -98,19 +98,20 @@ input characters, status messages or errors, which makes it easier to talk to pr
         **************************************************
         ?     : Display list of commands
         *IDN? : Display ID and version info
+        SWE   : <OnOff> En./Dis. reporting of switch events.
         SW?   : Return the state of ALL switches (40 bytes)
         OUT   : <hwIndex> <PWMlow> [tPulse] [PWMhigh]
         RUL   : <ID> <IDin> <IDout> <trHoldOff> <tPulse>
-                <pwmOn> <pwmOff> <bPosEdge> <bAutoOff> <bLevelTr>
-        RULE  : Enable  a previously disabled rule: RULE <ID>
-        RULD  : Disable a previously defined rule:  RULD <ID>
+                <pwmOn> <pwmOff> <bPosEdge>
+        RULE  : En./Dis a prev. def. rule: RULE <ID> <OnOff>
         LEC   : <channel> <spiSpeed [Hz]> [frameFmt]
         LED   : <channel> <nBytes>\n<binary blob of nBytes>
         I2C   : <channel> <I2Caddr> <sendData> <nBytesRx>
 
 
 ## Switch events
-When a switch input flips its state, its hwIndex and new state is immediately reported on the USB serial port
+When a switch input flips its state, its hwIndex and new state is immediately reported on the USB serial port.
+This feature is disabled by default and needs to be enabled with the `SWE 1\n` command.
 
 __Example__
 
@@ -134,23 +135,23 @@ Received:
 
 ## `OUT` set a solenoid driver output
  * hwIndex 
- * pwm hold power  (0-15)
+ * pwm hold power  (0-7)
  * pulse time in ms  (0 - 32767), optional
- * pwm pulse power (0-15), optional 
+ * pwm pulse power (0-7), optional 
  
 __Example__
 
-Set output pin with hwIndex 0x100 to a pwm power level of 10 and keep it there.
+Set output pin with hwIndex 0x100 to a pwm power level of 2 and keep it there.
 
 Sent:
 
-        OUT 0x100 10\n
+        OUT 0x100 2\n
 
-Pulse output with hwIndex 0x110 for 300 ms with a pwm power level of 10 and then keep it at a power level of 2.
+Pulse output with hwIndex 0x110 for 300 ms with a pwm power level of 7 and then keep it at a power level of 2.
 
 Sent:
 
-        OUT 0x110 2 300 10\n
+        OUT 0x110 2 300 7\n
 
  
 ## `RUL` setup and enable a quick-fire rule
@@ -159,24 +160,16 @@ Sent:
  * driver output ID number
  * post trigger hold-off time [ms]
  * pulse duration [ms]
- * pulse pwm (0-15)
- * hold pwm  (0-15)
+ * pulse pwm (0-7)
+ * hold pwm  (0-7)
  * Enable trigger on pos edge?
- * Enable auto. output off once input releases
- * Enable level Trigger (no edge check)
-
 
 ### Logic for each rule
 
         If a rule is enabled:
             If it is currently triggered:
                 If holdOff time expired:
-                    If OFF_ON_RELEASE flag is set:
-                        If input is released:
-                            switch output Off
-                            set Rule to untriggered state
-                    Else:
-                        set Rule to untriggered state
+                    set Rule to untriggered state
                 Else:
                     decrement holdOff time
             else:
@@ -184,27 +177,15 @@ Sent:
                     Set Rule to triggered state
                     switch output ON
 
-
-### Notes
-When enabling level trigger, the edge detecion is disabled and the rule will stay in triggered state
-as long as the input is high (or low)
- 
-When auto. output off is enabled, the rule stays in triggered state as long as the level is high. 
-When the level is low again, it disables the outputs and arms the trigger again.
-
-Warning: When auto. output off is disabled and level trigger is enabled it leads to a periodic trigger condition.
-Sending trigger events every `triggerHoldOffTime` as long as the level is there (not so good)
-
 __Example__
 
 Sent:
 
-        RUL 0 0x23 0x100 4 1 15 3 1 1 0\n
+        RUL 0 0x23 0x100 40 20 7 2 1\n
     
-Setup ruleId 0. Input hwIndex is 0x23, output hwIndex is 0x100. After triggering, at least 4 ms need to ellapse
- before the trigger becomes armed again. Once triggered it pulses the output for 1 ms with pwmPower 15, then it
-  holds the output with pwmPower 3. The trigger happens on a positive edge. Once the input is released (and at
-   least 4 ms ellapsed), the output is switched off again.
+Setup ruleId 0. Input hwIndex is 0x23, output hwIndex is 0x100. After triggering, at least 40 ms need to ellapse
+ before the trigger becomes armed again. Once triggered it pulses the output for 20 ms with pwmPower 7, then it
+  holds the output with pwmPower 2. The trigger happens on a positive edge.
 
 ## `LED` dump data to WS2811 RGB LED strings
 There are 3 channels which can address up to 1024 LEDs each. 
