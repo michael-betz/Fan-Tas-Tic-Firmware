@@ -11,7 +11,7 @@
 #include "inc/hw_types.h"
 #include "inc/hw_timer.h"
 #include "inc/hw_ints.h"
-#include "sensorlib/i2cm_drv.h"
+#include "utils/i2cm_drv.h"
 // FreeRTOS includes
 #include "FreeRTOSConfig.h"
 #include "FreeRTOS.h"
@@ -26,6 +26,7 @@
 #include "driverlib/timer.h"
 #include "utils/uartstdio.h"
 #include "utils/ustdlib.h"
+#include "utils/i2cm_drv.h"
 // My stuff
 #include "main.h"
 #include "myTasks.h"
@@ -35,17 +36,19 @@
 // Global vars.
 //*****************************************************************************
 tI2CMInstance g_sI2CInst[4];                         //Four TI I2C driver instances for 4 I2C channels
+SemaphoreHandle_t g_i2cSemas[4];                     //Four binary semaphores for exclusive access to I2C driver
 
 // I2C driver streams input state data into the below arrays
-uint8_t g_i2cReadStates[4][PCF_MAX_PER_CHANNEL];     //All Error codes of last I2C scan
+uint8_t g_I2CState[4][PCF_MAX_PER_CHANNEL];          //Status of last transmission
 t_switchStateConverter g_SwitchStateSampled;         //Read values of last I2C scan
 t_switchStateConverter g_SwitchStateDebounced;       //Debounced values (the same after 4 reads)
 t_switchStateConverter g_SwitchStateToggled;         //Bits which changed
 t_switchStateConverter g_SwitchStateNoDebounce;      //Debouncing-OFF flags
 
 // Stuff for synchronizing TI I2C driver with freeRtos `read inputs` task
-volatile uint8_t g_readCounter = 0;                  // I2C read finished when g_readCounter == 0
-static TaskHandle_t xTaskToNotifyI2CscanDone = NULL; //send freeRtos task notification there once i2c scan is done
+uint8_t g_reDiscover;                                      // Flag Rescann all I2C inputs
+volatile SemaphoreHandle_t g_pcfReadsInProgressSema = NULL;// I2C read finished when == 0
+static TaskHandle_t g_taskToNotifyI2CscanDone = NULL;      //send freeRtos task notification there once i2c scan is done
 
 // Arrays to keep track of timed output pin states and quick-fire rules
 t_quickRule g_QuickRuleList[MAX_QUICK_RULES];        //List of Quick fire rules
@@ -138,19 +141,36 @@ void initMyI2C() {
     I2CMInit(&g_sI2CInst[1], I2C1_BASE, INT_I2C1, 0xff, 0xff, SYSTEM_CLOCK);
     I2CMInit(&g_sI2CInst[2], I2C2_BASE, INT_I2C2, 0xff, 0xff, SYSTEM_CLOCK);
     I2CMInit(&g_sI2CInst[3], I2C3_BASE, INT_I2C3, 0xff, 0xff, SYSTEM_CLOCK);
+    for( i=0; i<=3; i++ ){
+        g_i2cSemas[i] = xSemaphoreCreateBinary();
+        xSemaphoreGive( g_i2cSemas[i] );
+    }
 }
 
 void ts_i2cTransfer(uint8_t channel, uint_fast8_t ui8Addr,
         const uint8_t *pui8WriteData, uint_fast16_t ui16WriteCount,
         uint8_t *pui8ReadData, uint_fast16_t ui16ReadCount,
         tSensorCallback *pfnCallback, void *pvCallbackData) {
+    int8_t retVal;
 //    Do a thread safe I2C transfer in background (add command to the i2c queue)
     if (channel > 3)
         return;
-    taskENTER_CRITICAL();
-    I2CMRead(&g_sI2CInst[channel], ui8Addr, pui8WriteData, ui16WriteCount,
-            pui8ReadData, ui16ReadCount, pfnCallback, pvCallbackData);
-    taskEXIT_CRITICAL();
+    if( xSemaphoreTake( g_i2cSemas[channel], 10 ) ){
+    //    taskENTER_CRITICAL();
+        retVal = I2CMRead(&g_sI2CInst[channel], ui8Addr, pui8WriteData, ui16WriteCount,
+                pui8ReadData, ui16ReadCount, pfnCallback, pvCallbackData);
+    //    taskEXIT_CRITICAL();
+        xSemaphoreGive( g_i2cSemas[channel] );
+        if( !retVal ){
+            UARTprintf("%22s: !!! FATALITY !!! I2CMRead() failed. Buffer full? \n", "ts_i2cTransfer()");
+//            configASSERT( 0 );
+            initMyI2C();
+        }
+    } else {
+        UARTprintf("%22s: !!! FATALITY !!! Could not TAKE Semaphore in time.\n", "ts_i2cTransfer");
+        configASSERT( 0 );
+    }
+
 }
 
 uint8_t getSMrow() {
@@ -226,13 +246,14 @@ void readSwitchMatrix() {
 void i2cDoneCallback(void* pvCallbackData, uint_fast8_t ui8Status) {
     // pvCallbackData = pointer to a place in a global array, where the
     // status of the current transaction can be stored
+//    uint8_t queueSize;
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     uint8_t *tempReadState = pvCallbackData;
-    *tempReadState = ui8Status;
-    g_readCounter--;            //Incremented by each started I2C job, decremented by each callback
-    if ( g_readCounter == 0 ) { //done with all jobs
-        configASSERT( xTaskToNotifyI2CscanDone != NULL );
-        vTaskNotifyGiveFromISR( xTaskToNotifyI2CscanDone, &xHigherPriorityTaskWoken );
+    *tempReadState = ui8Status;                 //Store status value of this transfer in global array
+    xSemaphoreTakeFromISR( g_pcfReadsInProgressSema, NULL );     //Decrement `jobs in progress` counter
+    if ( xQueueIsQueueEmptyFromISR(g_pcfReadsInProgressSema) ) { //We're done with all jobs
+        configASSERT( g_taskToNotifyI2CscanDone != NULL );
+        vTaskNotifyGiveFromISR( g_taskToNotifyI2CscanDone, &xHigherPriorityTaskWoken );
         portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
     }
 }
@@ -245,19 +266,33 @@ void i2cDoneCallback(void* pvCallbackData, uint_fast8_t ui8Status) {
 // e.g., the ones which are actually connected!
 // @ToDo: only disable inputs on specific I2C error, which comes up when there is no dev. connected (maybe I2CM_STATUS_ADDR_NACK or I2CM_STATUS_ARB_LOST)
 void i2cStartPCFL8574refresh() {
-    uint8_t nPcf, nChannel, lastState;
-    configASSERT( g_readCounter == 0 );
-    configASSERT( xTaskToNotifyI2CscanDone == NULL );
-    xTaskToNotifyI2CscanDone = xTaskGetCurrentTaskHandle();
-    for (nPcf = 0; nPcf <= PCF_MAX_PER_CHANNEL - 1; nPcf++) {
+    uint8_t nPcf, nChannel, previousState;//, queueSize;
+    xSemaphoreGive( g_pcfReadsInProgressSema );     //Make sure `I2C-DONE` cannot be triggered before all jobs are added
+    for ( nPcf = 0; nPcf <= PCF_MAX_PER_CHANNEL - 1; nPcf++ ) {
         for ( nChannel = 0; nChannel <= 3; nChannel++ ) {
-            lastState = g_i2cReadStates[nChannel][nPcf];
-            // If previous read succeeded
-            if( lastState==I2CM_STATUS_SUCCESS || lastState==I2CM_STATUS_DATA_NACK ){
-                g_readCounter++;
-                ts_i2cTransfer( nChannel, PCF_LOWEST_ADDR + nPcf, NULL, 0, g_SwitchStateSampled.switchState.i2cReadData[nChannel], 1, i2cDoneCallback, &g_i2cReadStates[nChannel][nPcf] );
+            previousState = g_I2CState[nChannel][nPcf];
+            // If a previous read furing init succeeded, start another one
+            if( previousState == I2CM_STATUS_DISABLED ){
+                continue;
+            }
+            if( previousState != I2CM_STATUS_SUCCESS ){
+                UARTprintf( "%22s: I2C hwIndex: 0x%2x, error %d\n", "i2cStartPCFL8574refresh()", 64 + nChannel*PCF_MAX_PER_CHANNEL*8 + nPcf*8, previousState );
+//                g_I2CState[nChannel][nPcf] = I2CM_STATUS_DISABLED;
+//                continue;
+            }
+            if( xSemaphoreGive( g_pcfReadsInProgressSema ) ) { //Increment reads in progress counter
+                ts_i2cTransfer( nChannel, PCF_LOWEST_ADDR + nPcf, NULL, 0, &g_SwitchStateSampled.switchState.i2cReadData[nChannel][nPcf], 1, i2cDoneCallback, &g_I2CState[nChannel][nPcf] );
+            } else {
+                UARTprintf("i2cStartPCFL8574refresh(): Semaphore overflow!\n");
+                configASSERT( 0 );
             }
         }
+    }
+    xSemaphoreTake( g_pcfReadsInProgressSema, 1 );     //Only now `I2C-DONE` can be triggered from the callback
+    // In case the I2C callback was fired already, manually check if I2C is done here
+    if ( uxQueueMessagesWaiting(g_pcfReadsInProgressSema) == 0 ) { //done with all reads
+        configASSERT( g_taskToNotifyI2CscanDone != NULL );
+        vTaskNotifyGiveFromISR( g_taskToNotifyI2CscanDone, NULL );
     }
 }
 
@@ -299,8 +334,8 @@ void reportSwitchStates() {
     uint8_t i, j, switchValue;
     uint16_t charsWritten = 3;
     uint32_t tempValue;
-    ustrncpy(outBuffer, "SE:", REPORT_SWITCH_BUF_SIZE); //SE = Switch event
-    for (i = 0; i < N_LONGS; i++) {                     // Go through all 32 bit Long-values
+    ustrncpy(outBuffer, "SE:", REPORT_SWITCH_BUF_SIZE); // SE = Switch event
+    for ( i = 0; i < N_LONGS; i++ ) {                   // Go through all 32 bit Long-values
         if ( g_SwitchStateToggled.longValues[i] ) {     // If a bit is set
             tempValue = g_SwitchStateToggled.longValues[i];
             for ( j=0; j<=31; j++ ) {
@@ -315,7 +350,7 @@ void reportSwitchStates() {
                     }
                 }
                 tempValue = tempValue >> 1;
-                if (tempValue == 0) {    //No more bits are set
+                if ( tempValue == 0 ) {    //No more bits are set
                     break;
                 }
             }
@@ -410,22 +445,58 @@ void setupQuickRule(uint8_t id, t_outputBit inputSwitchId,
     TF( QRF_ENABLED ) = 1;
 }
 
+void i2cDiscover(){
+    uint8_t nPcf, nChannel;
+    // Reset all read stati
+    for ( nPcf=0; nPcf<=PCF_MAX_PER_CHANNEL-1; nPcf++ ) {
+        for ( nChannel=0; nChannel<=3; nChannel++ ) {
+            g_I2CState[nChannel][nPcf] = I2CM_STATUS_SUCCESS;
+        }
+    }
+    // Read the inputs a bit to detect i2c errors
+    i2cStartPCFL8574refresh();
+    readSwitchMatrix();
+    ulTaskNotifyTake( pdTRUE, portMAX_DELAY);
+    UARTprintf("%22s: hwIndex of PCF8574s [ ", "i2cDiscover()");
+    for ( nPcf=0; nPcf<=PCF_MAX_PER_CHANNEL-1; nPcf++ ) {
+        for ( nChannel=0; nChannel<=3; nChannel++ ) {
+            if( g_I2CState[nChannel][nPcf] == I2CM_STATUS_SUCCESS ){
+                UARTprintf( "0x%02x ", 64 + nChannel*PCF_MAX_PER_CHANNEL + nPcf*8 );
+            } else {
+                g_I2CState[nChannel][nPcf] = I2CM_STATUS_DISABLED;
+            }
+        }
+    }
+    UARTprintf("]\n");
+}
+
 void taskDebouncer(void *pvParameters) {
 //    Read the state of all switches every 3 ms
 //    Then we need to debounce each switch and send `state changed` events
 //    uint32_t ticks;
     TickType_t xLastWakeTime;
     uint8_t i;
-    UARTprintf("%22s: %s", "taskDebouncer()", "Started!\n");
+    UARTprintf("%22s: Started! I2CbufferSize = %d\n", "taskDebouncer()", NUM_I2CM_COMMANDS);
     for (i = 0; i < MAX_QUICK_RULES; i++) {
         disableQuickRule(i);
     }
+    // Each of the 4*8 read operations takes a sema. + 1 extra sema for waiting during when the jobs are added
+    // I2C-read is done when the queue behind the semaphore `g_pcfReadsInProgressSema` is empty
+    g_pcfReadsInProgressSema = xSemaphoreCreateCounting( 4*PCF_MAX_PER_CHANNEL+1, 0 );
+    g_taskToNotifyI2CscanDone = xTaskGetCurrentTaskHandle();
+    g_reDiscover = 0;
     vTaskDelay( 1 );
+    i2cDiscover();
     i2cStartPCFL8574refresh();
     readSwitchMatrix();
     xLastWakeTime = xTaskGetTickCount();
     while (1) {
         if (ulTaskNotifyTake( pdTRUE, portMAX_DELAY)) {    // Wait for i2c scanner ISR to finish
+            // If rediscover flag is set, rescan all i2c inputs
+            if( g_reDiscover ){
+                i2cDiscover();
+                g_reDiscover = 0;
+            }
             // Run debounce algo (14 us)
             debounceAlgo( g_SwitchStateSampled.longValues, g_SwitchStateDebounced.longValues, g_SwitchStateToggled.longValues, g_SwitchStateNoDebounce.longValues );
             // Notify Mission pinball over serial port of all changed switches

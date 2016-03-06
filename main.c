@@ -16,7 +16,7 @@
 #include "inc/hw_ints.h"
 #include "inc/hw_pwm.h"
 
-#include "sensorlib/i2cm_drv.h"
+#include "utils/i2cm_drv.h"
 #include "utils/uartstdio.h"
 
 // TivaWare includes
@@ -84,11 +84,11 @@ uint32_t getTimer(){
 }
 
 void vApplicationStackOverflowHook( TaskHandle_t xTask, char *pcTaskName ){
-    while(1);
+    configASSERT(0);
 }
 
 void vApplicationMallocFailedHook( void ){
-    while(1);
+    configASSERT(0);
 }
 
 void ledOut( uint8_t ledVal ){
@@ -218,7 +218,7 @@ void setPwm( uint8_t channel, uint16_t pwmValue ){
 // Main function
 //-------------------------------------------------------------------------
 int main(void) {
-    uint8_t i,j,z=0;
+    uint8_t z=0; //i=0, j=0;
     // Set the clocking to run at 80 MHz from the PLL.
     ROM_SysCtlClockSet( SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN );
     initGpio();         // Init GPIO pins
@@ -230,11 +230,12 @@ int main(void) {
     //   The User has to set the pin high manually if it is
     //   to be used as an input !
     //  -------------------------------------------------------
-    for (i=0; i<=3; i++) {            // For each I2C channel
-        for (j=0x20; j<=0x27; j++) {  // For each PCFL I2C addr.
-            I2CMRead(&g_sI2CInst[i], j, &z, 1, NULL, 0, NULL, NULL); //Send 0x00
-        }
-    }
+//    for (i=0; i<=3; i++) {            // For each I2C channel
+//        for (j=0x20; j<=0x27; j++) {  // For each PCFL I2C addr.
+//            I2CMRead(&g_sI2CInst[i], j, &z, 1, NULL, 0, NULL, NULL); //Send 0x00
+//        }
+//    }
+    I2CMRead( &g_sI2CInst[0], 0x20, &z, 1, NULL, 0, NULL, NULL);       //Send 0x00 to on-board PCF8574
     spiSetup();         //Init 3 SPI channels for setting ws2811 LEDs
     initPWM();          //Init the 4 Hardware PWM output channels
     // Enable lazy stacking for interrupt handlers.  This allows floating-point
@@ -266,7 +267,6 @@ int main(void) {
     ROM_IntPrioritySet(INT_I2C0, (6<<5) );     //I2C = Medium priority
     ROM_IntPrioritySet(INT_I2C1, (6<<5) );
     ROM_IntPrioritySet(INT_I2C2, (6<<5) );
-    ROM_IntPrioritySet(INT_I2C3, (6<<5) );
     ROM_IntPrioritySet(INT_I2C3, (6<<5) );
     ROM_IntPrioritySet(INT_UART0,(7<<5) );     //Debug UART = Low priority
     ROM_IntPrioritySet(INT_SSI1, (5<<5) );     //SPI  = High priority

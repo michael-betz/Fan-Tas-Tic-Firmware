@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "sensorlib/i2cm_drv.h"
+#include "utils/i2cm_drv.h"
 #include "utils/uartstdio.h"
 #include "usblib/usblib.h"
 #include "usblib/usbcdc.h"

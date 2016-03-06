@@ -16,6 +16,8 @@
 #define PCF_MAX_PER_CHANNEL 8
 // Lowest possible I2C Address of a PCF8574 IO extender (all address pins low)
 #define PCF_LOWEST_ADDR 0x20
+// Flag: No PCF8574 is connected at this address (set during boot)
+#define I2CM_STATUS_DISABLED  42
 // Read all PCF inputs and process quickRules every xxx ms
 #define DEBOUNCER_READ_PERIOD 3
 // How many uint32_t values to express all the input states
@@ -115,6 +117,8 @@ extern t_switchStateConverter g_SwitchStateToggled;		//Bits which changed
 extern t_switchStateConverter g_SwitchStateNoDebounce;  //Debouncing-OFF flags
 extern t_quickRule g_QuickRuleList[MAX_QUICK_RULES];	//List of Quickrules
 
+extern uint8_t g_reDiscover;                            // Flag Rescann all I2C inputs
+
 //*****************************************************************************
 // Global functions
 //*****************************************************************************
@@ -123,6 +127,7 @@ void ts_i2cTransfer(uint8_t channel, uint_fast8_t ui8Addr,
         const uint8_t *pui8WriteData, uint_fast16_t ui16WriteCount,
         uint8_t *pui8ReadData, uint_fast16_t ui16ReadCount,
         tSensorCallback *pfnCallback, void *pvCallbackData);
+void i2cDiscover();
 void i2cStartPCFL8574refresh();
 void taskDebouncer(void *pvParameters);
 

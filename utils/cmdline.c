@@ -32,7 +32,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "utils/ustdlib.h"
-#include "utils/cmdline.h"
+#include "./cmdline.h"
 
 //*****************************************************************************
 //

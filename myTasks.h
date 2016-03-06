@@ -26,7 +26,7 @@
 //*****************************************************************************
 extern TaskHandle_t hUSBCommandParser;
 extern TaskHandle_t g_customI2cTask;        //Task to notify once custom i2c command is done
-extern SemaphoreHandle_t g_MutexCustomI2C;  //To ensure the custom I2C is done before next one starts
+extern SemaphoreHandle_t g_SemaCustomI2C;  //To ensure the custom I2C is done before next one starts
 extern uint8_t g_reportSwitchEvents;        //Flag: Should Switch events be reported on the serial port?
 
 //*****************************************************************************
@@ -38,6 +38,7 @@ void taskUsbCommandParser(void *pvParameters);
 void taskI2CCustomReporter(void *pvParameters);
 extern int Cmd_help(int argc, char *argv[]);
 extern int Cmd_IDN(int argc, char *argv[]);
+extern int Cmd_DISC(int argc, char *argv[]);
 extern int Cmd_SW(int argc, char *argv[]);
 extern int Cmd_SWE(int argc, char *argv[]);
 extern int Cmd_DEB(int argc, char *argv[]);

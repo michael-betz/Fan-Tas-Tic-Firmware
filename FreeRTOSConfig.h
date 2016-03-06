@@ -93,7 +93,7 @@
 #define configUSE_TICK_HOOK             0
 #define configMAX_PRIORITIES            ( 5 )
 #define configMINIMAL_STACK_SIZE        ( ( unsigned short ) 64 )
-#define configTOTAL_HEAP_SIZE           ( ( size_t ) ( 7500 ) )
+#define configTOTAL_HEAP_SIZE           ( ( size_t ) ( 8000 ) )
 #define configMAX_TASK_NAME_LEN         ( 10 )
 #define configUSE_TRACE_FACILITY        1
 #define configUSE_16_BIT_TICKS          0
@@ -104,7 +104,7 @@
 #define configUSE_RECURSIVE_MUTEXES     0
 #define configUSE_MALLOC_FAILED_HOOK    1
 #define configUSE_APPLICATION_TASK_TAG  0
-#define configUSE_COUNTING_SEMAPHORES   0
+#define configUSE_COUNTING_SEMAPHORES   1
 #define configUSE_STATS_FORMATTING_FUNCTIONS    0
 #define configGENERATE_RUN_TIME_STATS   0
 
@@ -150,6 +150,9 @@ void vPreSleepProcessing( unsigned long xExpectedIdleTime );
 void vPostSleepProcessing( unsigned long xExpectedIdleTime );
 #define configPRE_SLEEP_PROCESSING( xExpectedIdleTime ) vPreSleepProcessing( xExpectedIdleTime );
 #define configPOST_SLEEP_PROCESSING( xExpectedIdleTime ) vPostSleepProcessing( xExpectedIdleTime );
+
+/* Define configASSERT() to disable interrupts and sit in a loop. */
+#define configASSERT(x)     if( ( x ) == 0 ) { taskDISABLE_INTERRUPTS(); for( ;; ); }
 
 /* Definitions that map the FreeRTOS port interrupt handlers to their CMSIS
 standard names. */

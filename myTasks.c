@@ -32,7 +32,7 @@
 #include "driverlib/interrupt.h"
 #include "driverlib/rom.h"
 #include "driverlib/sysctl.h"
-#include "sensorlib/i2cm_drv.h"
+#include "utils/i2cm_drv.h"
 #include "utils/ustdlib.h"
 #include "utils/uartstdio.h"
 #include "utils/cmdline.h"
@@ -52,7 +52,7 @@
 //*****************************************************************************
 // Stuff for synchronizing TI I2C driver with freeRtos `do custom I2C transaction` task
 TaskHandle_t g_customI2cTask = NULL;
-SemaphoreHandle_t g_MutexCustomI2C = NULL;
+SemaphoreHandle_t g_SemaCustomI2C = NULL;
 uint16_t g_customI2CnBytesRx;
 uint8_t g_customI2CrxBuffer[CUSTOM_I2C_BUF_LEN];
 uint8_t g_customI2Cstate;
@@ -65,9 +65,11 @@ uint8_t g_reportSwitchEvents = 0;
 tCmdLineEntry g_psCmdTable[] = {
         { "?",     Cmd_help, ": Display list of commands" },
         { "*IDN?", Cmd_IDN,  ": Display ID and version info" },
-        { "SWE",   Cmd_SWE,  ": <OnOff> En./Dis. reporting of switch events." },
+        { "DISC",  Cmd_DISC, ": Discover PCF8574 GPIO expanders on I2C busses"},
+        { "SWE",   Cmd_SWE,  ": <OnOff> En./Dis. reporting of switch events" },
         { "DEB",   Cmd_DEB,  ": <hwIndex> <OnOff> En./Dis. 12 ms debouncing" },
         { "SW?",   Cmd_SW,   ": Return the state of ALL switches (40 bytes)" },
+        //{ "PCFIN", Cmd_PCFIN,": <hwIndex> Config. PCF8574 pin as input (HIGH)" },
         { "OUT",   Cmd_OUT,  ": <hwIndex> <PWMlow> [tPulse] [PWMhigh]" },
         { "RUL",   Cmd_RUL,  ": <ID> <IDin> <IDout> <trHoldOff>\n        <tPulse> <pwmOn> <pwmOff> <bPosEdge>" },
         { "RULE",  Cmd_RULE, ": En./Dis a prev. def. rule: RULE <ID> <OnOff>" },
@@ -333,6 +335,11 @@ int Cmd_IDN(int argc, char *argv[]) {
     ts_usbSend( (uint8_t*)buff, VERSION_IDN_LEN );
     UARTprintf( VERSION_INFO );
     return (0);
+}
+
+int Cmd_DISC(int argc, char *argv[]){
+    g_reDiscover = 1;                                      // Flag Rescann all I2C inputs
+    return(0);
 }
 
 int Cmd_SW(int argc, char *argv[]) {
@@ -615,7 +622,8 @@ void taskI2CCustomReporter(void *pvParameters) {
     uint8_t *writePointer, *readPointer;
     uint16_t i;
     g_customI2cTask = xTaskGetCurrentTaskHandle();
-    g_MutexCustomI2C = xSemaphoreCreateMutex();
+    g_SemaCustomI2C = xSemaphoreCreateBinary();
+    xSemaphoreGive( g_SemaCustomI2C );
     UARTprintf("%22s: %s", "taskI2CustomReporter()", "Started!\n");
     while( 1 ){
         if( ulTaskNotifyTake( pdTRUE, portMAX_DELAY) ) {    // Wait for notification of i2c transaction finished
@@ -644,7 +652,7 @@ void taskI2CCustomReporter(void *pvParameters) {
             }
             writePointer += usprintf( (char*)writePointer, "\n" );
             ts_usbSend( outBuffer, ustrlen((char*)outBuffer) );
-            xSemaphoreGive( g_MutexCustomI2C ); // release the Mutex to allow another custom I2C command
+            xSemaphoreGive( g_SemaCustomI2C ); // release the Binary Smeaphore to allow another custom I2C command
         }
     }
 }
@@ -688,10 +696,10 @@ int Cmd_I2C(int argc, char *argv[]) {
             writePointer++;
         }
         // Take the binary semaphore g_semaCustomI2C (released after reporting result on USB)
-        if( xSemaphoreTake( g_MutexCustomI2C, 3000 ) ){
+        if( xSemaphoreTake( g_SemaCustomI2C, 3000 ) ){
             ts_i2cTransfer( channel, i2cAddr, txBuffer, nBytesTx, g_customI2CrxBuffer, g_customI2CnBytesRx, cmdI2CCallback, NULL );
         } else {
-            UARTprintf("%22s: Timeout, could not acquire custom I2C mutex\n", "Cmd_I2C()");
+            UARTprintf("%22s: Timeout, could not acquire custom I2C Semaphore\n", "Cmd_I2C()");
         }
         return 0;
     }

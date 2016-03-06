@@ -48,6 +48,7 @@ typedef void (tSensorCallback)(void *pvData, uint_fast8_t ui8Status);
 // The possible status values that can be returned by the I2C command callback.
 //
 //*****************************************************************************
+// The lower 4 bit encode the status code
 #define I2CM_STATUS_SUCCESS     0
 #define I2CM_STATUS_ADDR_NACK   1
 #define I2CM_STATUS_DATA_NACK   2
