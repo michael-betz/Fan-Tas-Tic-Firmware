@@ -401,7 +401,8 @@ void processQuickRules() {
                     if ( pinValue == TF(QRF_TRIG_EDGE_POS) ) {  //    Check if the edge matches
                         TF( QRF_STATE_TRIG ) = 1;               //      Set Rule to triggered state
                         currentRule->triggerHoldOffCounter = currentRule->triggerHoldOffTime;
-                        UARTprintf( "%22s: [%d] Triggered, Outp. set\n", "processQuickRules()", i );
+                        //UARTprintf( "%22s: [%d] Triggered, Outp. set\n", "processQuickRules()", i );
+                        UARTprintf( "QR%02d ", i );
                         setPCFOutput( currentRule->outputDriverId,
                                       currentRule->tPulse, currentRule->pwmHigh,
                                       currentRule->pwmLow );
@@ -697,7 +698,7 @@ void setPCFOutput(t_outputBit outLocation, int16_t tPulse, uint16_t highPower, u
                 setPwm( outLocation.pinIndex, highPower );
             }
             bitRules->tPulse = tPulse;
-            UARTprintf("%22s: wrote to g_outWriterList[%d]\n", "setPclOutput()", i );
+//            UARTprintf("%22s: wrote to g_outWriterList[%d]\n", "setPclOutput()", i );
             return;
         }
         outListPtr++;
