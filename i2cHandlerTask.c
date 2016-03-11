@@ -155,21 +155,21 @@ void ts_i2cTransfer(uint8_t channel, uint_fast8_t ui8Addr,
 //    Do a thread safe I2C transfer in background (add command to the i2c queue)
     if (channel > 3)
         return;
-    if( xSemaphoreTake( g_i2cSemas[channel], 10 ) ){
-    //    taskENTER_CRITICAL();
+//    if( xSemaphoreTake( g_i2cSemas[channel], 10 ) ){
+        taskENTER_CRITICAL();
         retVal = I2CMRead(&g_sI2CInst[channel], ui8Addr, pui8WriteData, ui16WriteCount,
                 pui8ReadData, ui16ReadCount, pfnCallback, pvCallbackData);
-    //    taskEXIT_CRITICAL();
-        xSemaphoreGive( g_i2cSemas[channel] );
+        taskEXIT_CRITICAL();
+//        xSemaphoreGive( g_i2cSemas[channel] );
         if( !retVal ){
             UARTprintf("%22s: !!! FATALITY !!! I2CMRead() failed. Buffer full? \n", "ts_i2cTransfer()");
 //            configASSERT( 0 );
             initMyI2C();
         }
-    } else {
-        UARTprintf("%22s: !!! FATALITY !!! Could not TAKE Semaphore in time.\n", "ts_i2cTransfer");
-        configASSERT( 0 );
-    }
+//    } else {
+//        UARTprintf("%22s: !!! FATALITY !!! Could not TAKE Semaphore in time.\n", "ts_i2cTransfer");
+//        configASSERT( 0 );
+//    }
 
 }
 
@@ -402,7 +402,7 @@ void processQuickRules() {
                         TF( QRF_STATE_TRIG ) = 1;               //      Set Rule to triggered state
                         currentRule->triggerHoldOffCounter = currentRule->triggerHoldOffTime;
                         //UARTprintf( "%22s: [%d] Triggered, Outp. set\n", "processQuickRules()", i );
-                        UARTprintf( "QR%02d ", i );
+                        UARTprintf( "R%02d ", i );
                         setPCFOutput( currentRule->outputDriverId,
                                       currentRule->tPulse, currentRule->pwmHigh,
                                       currentRule->pwmLow );
