@@ -36,7 +36,7 @@
 // Global vars.
 //*****************************************************************************
 tI2CMInstance g_sI2CInst[4];                         //Four TI I2C driver instances for 4 I2C channels
-SemaphoreHandle_t g_i2cSemas[4];                     //Four binary semaphores for exclusive access to I2C driver
+//SemaphoreHandle_t g_i2cSemas[4];                     //Four binary semaphores for exclusive access to I2C driver
 
 // I2C driver streams input state data into the below arrays
 uint8_t g_I2CState[4][PCF_MAX_PER_CHANNEL];          //Status of last transmission
@@ -141,10 +141,10 @@ void initMyI2C() {
     I2CMInit(&g_sI2CInst[1], I2C1_BASE, INT_I2C1, 0xff, 0xff, SYSTEM_CLOCK);
     I2CMInit(&g_sI2CInst[2], I2C2_BASE, INT_I2C2, 0xff, 0xff, SYSTEM_CLOCK);
     I2CMInit(&g_sI2CInst[3], I2C3_BASE, INT_I2C3, 0xff, 0xff, SYSTEM_CLOCK);
-    for( i=0; i<=3; i++ ){
-        g_i2cSemas[i] = xSemaphoreCreateBinary();
-        xSemaphoreGive( g_i2cSemas[i] );
-    }
+//    for( i=0; i<=3; i++ ){
+//        g_i2cSemas[i] = xSemaphoreCreateBinary();
+//        xSemaphoreGive( g_i2cSemas[i] );
+//    }
 }
 
 void ts_i2cTransfer(uint8_t channel, uint_fast8_t ui8Addr,
@@ -358,8 +358,8 @@ void reportSwitchStates() {
     }
     if (charsWritten > 3) {
         outBuffer[charsWritten] = '\n';
-        outBuffer[charsWritten + 1] = '\r';
-        ts_usbSend((uint8_t*) outBuffer, charsWritten + 2);
+//        outBuffer[charsWritten + 1] = '\r';
+        ts_usbSend( (uint8_t*)outBuffer, charsWritten+1 );
     }
 }
 
