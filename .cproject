@@ -98,7 +98,7 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="drivers/pinout.c|tm4c1294ncpdt_startup_ccs.c|tm4c1294ncpdt.cmd" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
+						<entry excluding="drivers/pinout.c|tm4c1294ncpdt.cmd|tm4c1294ncpdt_startup_ccs.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
@@ -168,7 +168,7 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="tm4c123gh6pm_startup_ccs.c|tm4c123gh6pm.cmd|tm4c1294ncpdt.cmd|tm4c1294ncpdt_startup_ccs.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
+						<entry excluding="tm4c1294ncpdt.cmd|tm4c123gh6pm.cmd|tm4c123gh6pm_startup_ccs.c|tm4c1294ncpdt_startup_ccs.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
 					</sourceEntries>
 				</configuration>
 			</storageModule>
