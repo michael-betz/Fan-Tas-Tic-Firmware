@@ -195,6 +195,8 @@ void taskUsbCommandParser( void *pvParameters ) {
     uint8_t *writePointer = charBuffer;                         // Points to first free place in charBuffer
     uint8_t *readPointer = charBuffer;                          // Points to the next unprocessed character
     uint8_t *spiWritePointer;                                   // Points to first free place in spiBuffer
+  //  spiSend( 0, 3 );
+//    while(1){};
     t_usbParserMode currentMode = PARS_MODE_ASCII;
     while (1) {
         switch( currentMode ){
@@ -257,11 +259,10 @@ void taskUsbCommandParser( void *pvParameters ) {
                 remainderSize = 0;
                 if( nCharsRead >= CMD_PARSER_BUF_LEN - 1 ){
                     UARTprintf("%22s: %s", "taskUsbCommandParser()", "Command buffer overflow, try a shorter command!\n");
-                    ASSERT(0);
-//                    USBBufferFlush( &g_sRxBuffer );
-//                    writePointer = charBuffer;
-//                    nCharsRead = 0;
-//                    remainderSize = 0;
+                    USBBufferFlush( &g_sRxBuffer );
+                    writePointer = charBuffer;
+                    nCharsRead = 0;
+                    remainderSize = 0;
                 }                                       //We still have space!
 //                UARTprintf("%22s: nCharsRead = %d\n", "taskUsbCommandParser()", nCharsRead);
             }
@@ -334,6 +335,7 @@ int Cmd_IDN(int argc, char *argv[]) {
     const uint8_t buff[] = VERSION_IDN;
     ts_usbSend( (uint8_t*)buff, VERSION_IDN_LEN );
     UARTprintf( VERSION_INFO );
+    UARTprintf( "xPortGetFreeHeapSize(): %d\n", xPortGetFreeHeapSize() );
     return (0);
 }
 

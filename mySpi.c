@@ -4,6 +4,10 @@
  *
  *  Created on: Dec 22, 2015
  *      Author: michael
+ *
+ *      TODO: Why does the stupid SPI interrupt not trigger the second time
+ *              When Interprocedure optimizations are switched ON
+ *
  */
 
 #include <stdint.h>
@@ -235,6 +239,7 @@ void spiISR( uint8_t channel ){
                                        (void *)(state->baseAdr + SSI_O_DR),
                                        SPI_DMA_BUFFER_SIZE );
         ROM_uDMAChannelEnable( state->dmaChannel );
+        // Used to have a stack overflow here, and it took me ages to find ! What a PITA !
         state->state = SPI_SEND_PONG;       // Setup next state
         bufferToRefill = state->pongBuffer; // Setup next state
         break;
@@ -249,6 +254,7 @@ void spiISR( uint8_t channel ){
                                        (void *)(state->baseAdr + SSI_O_DR),
                                        SPI_DMA_BUFFER_SIZE );
         ROM_uDMAChannelEnable( state->dmaChannel );
+//        ROM_SysCtlDelay( 1000 );
         state->state = SPI_SEND_PING;
         bufferToRefill = state->pingBuffer;
         break;
@@ -265,6 +271,7 @@ void spiISR( uint8_t channel ){
                                        (void *)(state->baseAdr + SSI_O_DR),
                                        11 );    //10 * 16 * 1 / 3.2MHz = 50 us
         ROM_uDMAChannelEnable( state->dmaChannel );
+//        ROM_SysCtlDelay( 1000 );
         state->state = SPI_IDLE;
         return;
 

@@ -122,29 +122,12 @@ void initMyI2C() {
     ROM_GPIOPinTypeI2CSCL( GPIO_PORTD_BASE, GPIO_PIN_0); //I2C3
     ROM_GPIOPinTypeI2C(    GPIO_PORTD_BASE, GPIO_PIN_1);
 
-    // Enable weak internal pullups on the SCK pin.
-    // Also disabes open drain so remove this once external pullups are in place
-//    ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_2, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C0
-//    ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_3, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
-//    ROM_GPIOPadConfigSet( GPIO_PORTA_BASE, GPIO_PIN_6, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C1
-//    ROM_GPIOPadConfigSet( GPIO_PORTA_BASE, GPIO_PIN_7, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
-//    ROM_GPIOPadConfigSet( GPIO_PORTE_BASE, GPIO_PIN_4, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C2
-//    ROM_GPIOPadConfigSet( GPIO_PORTE_BASE, GPIO_PIN_5, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
-//    ROM_GPIOPadConfigSet( GPIO_PORTD_BASE, GPIO_PIN_0, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU); //I2C3
-//    ROM_GPIOPadConfigSet( GPIO_PORTD_BASE, GPIO_PIN_1, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
-
-// Enable loopbakc mode (without pullups and without loopback the driver will hang! :( )
-//    I2C0_MCR_R |= 0x01;
-
     // Initialize I2C0 peripheral driver.
     I2CMInit(&g_sI2CInst[0], I2C0_BASE, INT_I2C0, 0xff, 0xff, SYSTEM_CLOCK);
     I2CMInit(&g_sI2CInst[1], I2C1_BASE, INT_I2C1, 0xff, 0xff, SYSTEM_CLOCK);
     I2CMInit(&g_sI2CInst[2], I2C2_BASE, INT_I2C2, 0xff, 0xff, SYSTEM_CLOCK);
     I2CMInit(&g_sI2CInst[3], I2C3_BASE, INT_I2C3, 0xff, 0xff, SYSTEM_CLOCK);
-//    for( i=0; i<=3; i++ ){
-//        g_i2cSemas[i] = xSemaphoreCreateBinary();
-//        xSemaphoreGive( g_i2cSemas[i] );
-//    }
+
 }
 
 void ts_i2cTransfer(uint8_t channel, uint_fast8_t ui8Addr,
@@ -155,22 +138,14 @@ void ts_i2cTransfer(uint8_t channel, uint_fast8_t ui8Addr,
 //    Do a thread safe I2C transfer in background (add command to the i2c queue)
     if (channel > 3)
         return;
-//    if( xSemaphoreTake( g_i2cSemas[channel], 10 ) ){
-        taskENTER_CRITICAL();
-        retVal = I2CMRead(&g_sI2CInst[channel], ui8Addr, pui8WriteData, ui16WriteCount,
-                pui8ReadData, ui16ReadCount, pfnCallback, pvCallbackData);
-        taskEXIT_CRITICAL();
-//        xSemaphoreGive( g_i2cSemas[channel] );
-        if( !retVal ){
-            UARTprintf("%22s: !!! FATALITY !!! I2CMRead() failed. Buffer full? \n", "ts_i2cTransfer()");
-//            configASSERT( 0 );
-            initMyI2C();
-        }
-//    } else {
-//        UARTprintf("%22s: !!! FATALITY !!! Could not TAKE Semaphore in time.\n", "ts_i2cTransfer");
-//        configASSERT( 0 );
-//    }
-
+    taskENTER_CRITICAL();
+    retVal = I2CMRead(&g_sI2CInst[channel], ui8Addr, pui8WriteData, ui16WriteCount,
+            pui8ReadData, ui16ReadCount, pfnCallback, pvCallbackData);
+    taskEXIT_CRITICAL();
+    if( !retVal ){
+        UARTprintf("%22s: !!! FATALITY !!! I2CMRead() failed. Buffer full? \n", "ts_i2cTransfer()");
+        initMyI2C();
+    }
 }
 
 uint8_t getSMrow() {
@@ -184,6 +159,7 @@ uint8_t getSMrow() {
     //4 3               PORTC
     //6 5               PORTD
     //      7           PORTF
+    // Sample the state of each sense line in temp
     HWREGBITB( &temp, 0 ) = ROM_GPIOPinRead( GPIO_PORTE_BASE, GPIO_PIN_3 ) > 0;
     HWREGBITB( &temp, 1 ) = ROM_GPIOPinRead( GPIO_PORTE_BASE, GPIO_PIN_2 ) > 0;
     HWREGBITB( &temp, 2 ) = ROM_GPIOPinRead( GPIO_PORTE_BASE, GPIO_PIN_1 ) > 0;
@@ -195,7 +171,9 @@ uint8_t getSMrow() {
     HWREGBITB( &temp, 6 ) = ROM_GPIOPinRead( GPIO_PORTD_BASE, GPIO_PIN_7 ) > 0;
 
     HWREGBITB( &temp, 7 ) = ROM_GPIOPinRead( GPIO_PORTF_BASE, GPIO_PIN_4 ) > 0;
-    return ~temp;
+    // A closed switch means it pulls the sense line to GND (active low)
+    // just like with the the PCF IO expanders.
+    return temp;
 }
 
 void resetSMrow() {
@@ -488,6 +466,7 @@ void taskDebouncer(void *pvParameters) {
     g_reDiscover = 0;
     vTaskDelay( 1 );
     i2cDiscover();
+    // Get the initial state of all switches silently (without reporting Switch Events)
     i2cStartPCFL8574refresh();
     readSwitchMatrix();
     xLastWakeTime = xTaskGetTickCount();

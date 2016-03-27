@@ -237,6 +237,7 @@ int main(void) {
 //    }
     I2CMRead( &g_sI2CInst[0], 0x20, &z, 1, NULL, 0, NULL, NULL);       //Send 0x00 to on-board PCF8574
     spiSetup();         //Init 3 SPI channels for setting ws2811 LEDs
+
     initPWM();          //Init the 4 Hardware PWM output channels
     // Enable lazy stacking for interrupt handlers.  This allows floating-point
     // instructions to be used within interrupt handlers, but at the expense of
@@ -272,6 +273,17 @@ int main(void) {
     ROM_IntPrioritySet(INT_SSI1, (5<<5) );     //SPI  = High priority
     ROM_IntPrioritySet(INT_SSI2, (5<<5) );
     ROM_IntPrioritySet(INT_SSI3, (5<<5) );
+
+    //  All mediocre
+//    ROM_IntPrioritySet(INT_USB0, (6<<5) );
+//    ROM_IntPrioritySet(INT_I2C0, (6<<5) );
+//    ROM_IntPrioritySet(INT_I2C1, (6<<5) );
+//    ROM_IntPrioritySet(INT_I2C2, (6<<5) );
+//    ROM_IntPrioritySet(INT_I2C3, (6<<5) );
+//    ROM_IntPrioritySet(INT_UART0,(6<<5) );
+//    ROM_IntPrioritySet(INT_SSI1, (6<<5) );
+//    ROM_IntPrioritySet(INT_SSI2, (6<<5) );
+//    ROM_IntPrioritySet(INT_SSI3, (6<<5) );
 
     //-------------------------------------------------------------------------
     // Startup the FreeRTOS scheduler
