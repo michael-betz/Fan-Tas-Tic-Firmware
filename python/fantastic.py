@@ -79,6 +79,27 @@ class HardwarePlatform(Platform):
         self.serialCom.send(b"\n")
         self.serialCom.send(b"SWE 1\n")
         self.serialCom.send(b"*IDN?\n")
+        #----------------------------------------------------------------
+        # Disable all quickfire rules
+        #----------------------------------------------------------------
+        CMD = ""
+        for rulId in range( HardwarePlatform.MAX_QUICK_RULES ):
+            CMD += "RULE {0} 0\n".format( rulId )
+        self.serialCom.send( CMD )
+        #----------------------------------------------------------------
+        # Configure LED channel speeds
+        #----------------------------------------------------------------
+        for i in range(3):
+            try:
+                ledKey = "led_clock_{0}".format(i)
+                if ledKey in platformConfig:
+                    tempSpeed = int( platformConfig[ledKey] )
+                    self.serialCom.send( "LEC {0} {1}\n".format(i,tempSpeed) )
+                    self.log.info( "LEC {0} {1}\n".format(i,tempSpeed) )
+            except Exception as e:
+                self.log.warning(e)
+                pass
+
         # Prefixes which can be received from the controller
         self.serialCommands = {
             b'ID' : self.receive_id,  # processor ID and version
@@ -103,8 +124,8 @@ class HardwarePlatform(Platform):
             cmd = msg[0:2]
             payload = msg[3:]
         else:
-            self.serialCom.send(b"\n")  #Clear previous commands
-            self.log.warning("Received maformed message: %s", msg)
+            self.serialCom.send(b"\n")   # Clear previous commands
+            self.log.warning("Received malformed message: %s", msg)
             return
         # Can't use try since it swallows too many errors for now
         if cmd in self.serialCommands:
@@ -133,7 +154,7 @@ class HardwarePlatform(Platform):
         i = 0
         for hwLong in hwLongs:
             for n in range(32):
-                hwBits[i] = ((hwLong>>n) & 0x01)# == 0
+                hwBits[i] = ((hwLong >> n) & 0x01)  # == 0
                 i += 1
         self.hw_switch_data = hwBits
 
@@ -144,7 +165,7 @@ class HardwarePlatform(Platform):
         update rather than lots of individual ones).
         """
         for channel, ledDat in enumerate( self.ledByteData ):
-            if( len(ledDat) > 0 ):
+            if len(ledDat) > 0:
                 msg = bytes("LED {0} {1}\n".format(channel, len(ledDat)), "utf8") + ledDat
                 self.serialCom.send( msg )
 
@@ -316,19 +337,24 @@ class HardwarePlatform(Platform):
         isPosEdge = sw_activity == 1
         tPulse  = driver_obj.hw_driver.tPulse
         pwmHigh = driver_obj.hw_driver.pwmHigh
+        # pwmLow is the power setting after the ON time, which is zero if a `pulse` is requested
         if driver_action == "pulse":
             pwmLow = 0
         else:
             pwmLow = driver_obj.hw_driver.pwmLow
         hwIndexSw  = switch_obj.number
         hwIndexOut = driver_obj.number
+        #`recycle_ms` in MPF lingo is equivalent to the trigger-hold-off time on a scope
         trHoldOff = driver_settings_overrides["recycle_ms"]
         if trHoldOff is None:
             trHoldOff = 0
+        # Get the next free index for a quick-fire-rule slot
         rulId = self._findFreeSpotForRules( 1 )
         rulTuple = (rulId, hwIndexSw, hwIndexOut, trHoldOff, tPulse, pwmHigh, pwmLow, int(isPosEdge))
         CMD = "RUL {0} {1} {2} {3} {4} {5} {6} {7}\n".format( *rulTuple )
+        # Remember which rules are associated with this switch-name in the `swNameToRuleIdDict`
         self.swNameToRuleIdDict[ switch_obj.name ].append( rulId )
+        # We keep the current state of all rule-slots in a the `configuredRules` list.
         self.configuredRules[ rulId ] =  rulTuple
         #--------------------------------------------------
         # For `disable_on_release` we need to configure a
@@ -346,11 +372,15 @@ class HardwarePlatform(Platform):
 
     def clear_hw_rule(self, sw_name):
         rulIds = self.swNameToRuleIdDict.pop( sw_name )
+        #print( "clear_hw_rule:", rulIds, self.configuredRules )
         CMD = ""
         for rulId in rulIds:
-            del self.configuredRules[rulId]
+            rulTuple = self.configuredRules[rulId]
             self.configuredRules[rulId] = None
+            # Disable the rule
             CMD += "RULE {0} 0\n".format( rulId )
+            # Just in case the flipper still in hold state, reset the coil
+            CMD += "OUT {0} 0\n".format( rulTuple[2] )
         del rulIds
         self.log.info( "{0} [{1}]".format(CMD.replace('\n',', '),sw_name) )
         self.serialCom.send( CMD )
