@@ -15,8 +15,8 @@
 // System clock rate, 80 MHz
 #define SYSTEM_CLOCK    80000000U
 
-// Set PWM frequency to 10 kHz, which gives a maximum PWM value for 100 % of 8000
-#define MAX_PWM (SYSTEM_CLOCK/10000)
+// Set PWM frequency to 20 kHz, which gives a maximum PWM value for 100 % of 4000
+#define MAX_PWM (SYSTEM_CLOCK/20000)
 
 void configureTimer();
 void startTimer();
