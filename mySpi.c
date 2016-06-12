@@ -5,8 +5,6 @@
  *  Created on: Dec 22, 2015
  *      Author: michael
  *
- *      TODO: Why does the stupid SPI interrupt not trigger the second time
- *              When Interprocedure optimizations are switched ON
  *
  */
 
@@ -48,7 +46,7 @@
 #include "usblib/usbcdc.h"
 #include "usblib/device/usbdevice.h"
 #include "usblib/device/usbdcdc.h"
-#include "usb_serial_structs.h"
+#include "drivers/usb_serial_structs.h"
 #include "myTasks.h"
 #include "i2cHandlerTask.h"
 #include "mySpi.h"

@@ -42,7 +42,7 @@
 #include "usblib/usbcdc.h"
 #include "usblib/device/usbdevice.h"
 #include "usblib/device/usbdcdc.h"
-#include "usb_serial_structs.h"
+#include "drivers/usb_serial_structs.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
 #include "task.h"
