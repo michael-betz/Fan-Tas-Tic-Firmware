@@ -163,8 +163,8 @@ __Example__
 
 Sent:
 
-        SOE 1\n
-        
+         SOE 1\n
+      
 Enables the 24 V supply to the solenoids (sets PE0 high).        
 
 ## `OUT` set a solenoid driver output
