@@ -93,7 +93,7 @@ The `DEVICE` port provides a virtual serial port
 which is meant to communicate with the (Python) host application. This port listens to the same commands but does not echo any
 input characters or status messages, which makes it easier to talk to programatically.
 
-Note that the `DEVICE` port reports errors in the form of an `ER:xxxx` error code. They can be looked up in (this)[https://docs.google.com/spreadsheets/d/1QlxT6QhTLHodxV4uOGEEIK3jQQLPyiI4lmSObMyx4UE/edit?usp=sharing] table. 
+Note that the `DEVICE` port reports errors in the form of an `ER:xxxx\n` error code. They can be looked up in [this](https://docs.google.com/spreadsheets/d/1QlxT6QhTLHodxV4uOGEEIK3jQQLPyiI4lmSObMyx4UE/edit?usp=sharing) table. 
 
         **************************************************
          Available commands   <required>  [optional]
@@ -149,6 +149,7 @@ __Example__
 Sent:
 
         SW?\n
+        
 Received:
 
         SW:00000000123456789ABCDEF0AFFE0000DEAD0000BEEF0000C0FFEE00000000000000000000000000\n
@@ -161,6 +162,7 @@ So the solenoids have to be manually activated by the user.
 __Example__
 
 Sent:
+
         SOE 1\n
         
 Enables the 24 V supply to the solenoids (sets PE0 high).        
