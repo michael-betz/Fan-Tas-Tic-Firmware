@@ -278,6 +278,8 @@ void spiISR( uint8_t channel ){
         return;
 
     default:
+        DISABLE_SOLENOIDS();
+        REPORT_ERROR( "ER:0005\n" );
         UARTprintf("%22s: WTF! unknow state. Ch %d\n", "spiISR()", channel);
         ASSERT(0);
     }

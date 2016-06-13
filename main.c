@@ -84,10 +84,12 @@ uint32_t getTimer(){
 }
 
 void vApplicationStackOverflowHook( TaskHandle_t xTask, char *pcTaskName ){
+    DISABLE_SOLENOIDS();
     configASSERT(0);
 }
 
 void vApplicationMallocFailedHook( void ){
+    DISABLE_SOLENOIDS();
     configASSERT(0);
 }
 
@@ -128,8 +130,13 @@ void initGpio(){
     ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_1 | GPIO_PIN_0, GPIO_STRENGTH_12MA, GPIO_PIN_TYPE_STD);
     // Enable the GPIO pins for the LED (PF2 & PF3).
     ROM_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2);
+    // Enable the GPIO pins for the 24V enbale (PE0).
+    ROM_GPIOPinTypeGPIOOutput(GPIO_PORTE_BASE, GPIO_PIN_0);
+    ROM_GPIODirModeSet( GPIO_PORTE_BASE, GPIO_PIN_0, GPIO_DIR_MODE_OUT );
+    ROM_GPIOPadConfigSet( GPIO_PORTE_BASE, GPIO_PIN_0, GPIO_STRENGTH_12MA, GPIO_PIN_TYPE_STD );
+    DISABLE_SOLENOIDS();
 
-    // Test for PCB short circuits
+// Test for PCB short circuits by toggling some pins
 //    ROM_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_2|GPIO_PIN_3);
 //    while(1){
 //        ROM_GPIOPinWrite( GPIO_PORTB_BASE, GPIO_PIN_2|GPIO_PIN_3, 0xFF );
@@ -309,6 +316,7 @@ int main(void) {
 
 //ASSERT() Error function failed ASSERTS() from driverlib/debug.h are executed in this function
 void __error__(char *pcFilename, uint32_t ui32Line) {
+    DISABLE_SOLENOIDS();
     while (1)
         ; // Place a breakpoint here to capture errors until logging routine is finished
 }

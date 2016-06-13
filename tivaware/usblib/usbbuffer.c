@@ -807,7 +807,6 @@ USBBufferWrite(const tUSBBuffer *psBuffer, const uint8_t *pui8Data,
     // Check parameter validity.
     //
     ASSERT(psBuffer && pui8Data);
-    ASSERT(psBuffer->bTransmitBuffer == true);
 
     //
     // Create a writable pointer to the private data.
@@ -835,7 +834,9 @@ USBBufferWrite(const tUSBBuffer *psBuffer, const uint8_t *pui8Data,
     //
     // Try to transmit the next packet to the host.
     //
-    ScheduleNextTransmission((tUSBBuffer *)psBuffer);
+    if( psBuffer->bTransmitBuffer == true ){
+        ScheduleNextTransmission((tUSBBuffer *)psBuffer);
+    }
 
     //
     // Tell the caller how many bytes we wrote to the buffer.

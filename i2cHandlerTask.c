@@ -143,6 +143,8 @@ void ts_i2cTransfer(uint8_t channel, uint_fast8_t ui8Addr,
             pui8ReadData, ui16ReadCount, pfnCallback, pvCallbackData);
     taskEXIT_CRITICAL();
     if( !retVal ){
+        DISABLE_SOLENOIDS();
+        REPORT_ERROR( "ER:0000\n" );
         UARTprintf("%22s: !!! FATALITY !!! I2CMRead() failed. Buffer full? \n", "ts_i2cTransfer()");
         initMyI2C();
     }
@@ -254,14 +256,18 @@ void i2cStartPCFL8574refresh() {
                 continue;
             }
             if( previousState != I2CM_STATUS_SUCCESS ){
+                DISABLE_SOLENOIDS();
                 UARTprintf( "%22s: I2C hwIndex: 0x%2x, error %d\n", "i2cStartPCFL8574refresh()", 64 + nChannel*PCF_MAX_PER_CHANNEL*8 + nPcf*8, previousState );
+                REPORT_ERROR( "ER:0001\n" );
 //                g_I2CState[nChannel][nPcf] = I2CM_STATUS_DISABLED;
 //                continue;
             }
             if( xSemaphoreGive( g_pcfReadsInProgressSema ) ) { //Increment reads in progress counter
                 ts_i2cTransfer( nChannel, PCF_LOWEST_ADDR + nPcf, NULL, 0, &g_SwitchStateSampled.switchState.i2cReadData[nChannel][nPcf], 1, i2cDoneCallback, &g_I2CState[nChannel][nPcf] );
             } else {
+                DISABLE_SOLENOIDS();
                 UARTprintf("i2cStartPCFL8574refresh(): Semaphore overflow!\n");
+                REPORT_ERROR( "ER:0002\n" );
                 configASSERT( 0 );
             }
         }
@@ -425,7 +431,7 @@ void setupQuickRule(uint8_t id, t_outputBit inputSwitchId,
 }
 
 void i2cDiscover(){
-    uint8_t nPcf, nChannel;
+    uint8_t nPcf, nChannel, nDiscovered=0;
     // Reset all read stati
     for ( nPcf=0; nPcf<=PCF_MAX_PER_CHANNEL-1; nPcf++ ) {
         for ( nChannel=0; nChannel<=3; nChannel++ ) {
@@ -441,12 +447,16 @@ void i2cDiscover(){
         for ( nChannel=0; nChannel<=3; nChannel++ ) {
             if( g_I2CState[nChannel][nPcf] == I2CM_STATUS_SUCCESS ){
                 UARTprintf( "0x%02x ", 64 + nChannel*PCF_MAX_PER_CHANNEL + nPcf*8 );
+                nDiscovered++;
             } else {
                 g_I2CState[nChannel][nPcf] = I2CM_STATUS_DISABLED;
             }
         }
     }
     UARTprintf("]\n");
+    if( nDiscovered == 0 ){
+        REPORT_ERROR( "ER:0003\n" );
+    }
 }
 
 void taskDebouncer(void *pvParameters) {
@@ -684,4 +694,5 @@ void setPCFOutput(t_outputBit outLocation, int16_t tPulse, uint16_t highPower, u
     }
 //    Error, no more space in outList :(
     UARTprintf("%22s: Error, no more space in g_outWriterList :(\n", "setPclOutput()");
+    REPORT_ERROR( "ER:0004\n" );
 }

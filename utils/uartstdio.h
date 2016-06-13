@@ -25,6 +25,8 @@
 #ifndef __UARTSTDIO_H__
 #define __UARTSTDIO_H__
 
+extern uint8_t globalDebugEnabled;
+
 #include <stdarg.h>
 
 //*****************************************************************************

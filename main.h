@@ -18,6 +18,10 @@
 // Set PWM frequency to 20 kHz, which gives a maximum PWM value for 100 % of 4000
 #define MAX_PWM (SYSTEM_CLOCK/20000)
 
+// Solenoid 24 V power interlock relay
+#define DISABLE_SOLENOIDS() ROM_GPIOPinWrite( GPIO_PORTE_BASE, GPIO_PIN_0, 0 )
+#define ENABLE_SOLENOIDS()  ROM_GPIOPinWrite( GPIO_PORTE_BASE, GPIO_PIN_0, 1 )
+
 void configureTimer();
 void startTimer();
 uint32_t stopTimer();

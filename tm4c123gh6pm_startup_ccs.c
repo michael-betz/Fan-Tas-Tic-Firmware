@@ -23,6 +23,12 @@
 //*****************************************************************************
 
 #include <stdint.h>
+#include <stdbool.h>
+#include "inc/hw_memmap.h"
+#include "inc/hw_gpio.h"
+#include "driverlib/gpio.h"
+#include "driverlib/rom.h"
+#include "main.h"
 
 //*****************************************************************************
 //
@@ -268,6 +274,7 @@ ResetISR(void)
 static void
 NmiSR(void)
 {
+    DISABLE_SOLENOIDS();
     //
     // Enter an infinite loop.
     //
@@ -286,6 +293,7 @@ NmiSR(void)
 static void
 FaultISR(void)
 {
+    DISABLE_SOLENOIDS();
     //
     // Enter an infinite loop.
     //
@@ -304,6 +312,7 @@ FaultISR(void)
 static void
 IntDefaultHandler(void)
 {
+    DISABLE_SOLENOIDS();
     //
     // Go into an infinite loop.
     //

@@ -48,6 +48,9 @@
 #include "task.h"
 #include "myTasks.h"
 
+
+uint8_t globalDebugEnabled = 1; //Will be set to 1 as soon as something is received over UART
+
 //*****************************************************************************
 //
 //! \addtogroup uartstdio_api
@@ -446,6 +449,9 @@ UARTStdioConfig(uint32_t ui32PortNum, uint32_t ui32Baud, uint32_t ui32SrcClock)
 int
 UARTwrite(const char *pcBuf, uint32_t ui32Len)
 {
+    if( !globalDebugEnabled ){
+        return ui32Len;
+    }
 #ifdef UART_BUFFERED
     unsigned int uIdx;
 
@@ -1302,6 +1308,9 @@ convert:
 void
 UARTprintf(const char *pcString, ...)
 {
+    if( !globalDebugEnabled ){
+        return;
+    }
     va_list vaArgP;
 
     //
@@ -1712,6 +1721,10 @@ UARTStdioIntHandler(void)
 //                }
 //            }
             // Echo the character to the Terminal AND the USB parser
+            if( globalDebugEnabled == 0 ){
+                globalDebugEnabled = 1;
+                UARTprintf("debug enabled !!!\n");
+            }
             UARTwrite((const char *)&cChar, 1);
             BaseType_t xHigherPriorityTaskWoken = pdFALSE;
             USBBufferWrite( &g_sRxBuffer, (uint8_t *)&cChar, 1 );

@@ -57,6 +57,7 @@ uint16_t g_customI2CnBytesRx;
 uint8_t g_customI2CrxBuffer[CUSTOM_I2C_BUF_LEN];
 uint8_t g_customI2Cstate;
 uint8_t g_reportSwitchEvents = 0;
+uint8_t g_errorBuffer[8];
 
 //*****************************************************************************
 // Command parser
@@ -69,7 +70,7 @@ tCmdLineEntry g_psCmdTable[] = {
         { "SWE",   Cmd_SWE,  ": <OnOff> En./Dis. reporting of switch events" },
         { "DEB",   Cmd_DEB,  ": <hwIndex> <OnOff> En./Dis. 12 ms debouncing" },
         { "SW?",   Cmd_SW,   ": Return the state of ALL switches (40 bytes)" },
-        //{ "PCFIN", Cmd_PCFIN,": <hwIndex> Config. PCF8574 pin as input (HIGH)" },
+        { "SOE",   Cmd_SOE,  ": <OnOff> En./Dis. 24 V solenoid power (careful!)" },
         { "OUT",   Cmd_OUT,  ": <hwIndex> <PWMlow> [tPulse] [PWMhigh]" },
         { "RUL",   Cmd_RUL,  ": <ID> <IDin> <IDout> <trHoldOff>\n        <tPulse> <pwmOn> <pwmOff> <bPosEdge>" },
         { "RULE",  Cmd_RULE, ": En./Dis a prev. def. rule: RULE <ID> <OnOff>" },
@@ -109,6 +110,9 @@ void taskDemoLED(void *pvParameters) {
             " Hi, here's the brain of Fan-Tas-Tic Pinball \n"
             "**************************************************\n");
     UARTprintf("%22s: %s", "taskDemoLED()", "Started!\n");
+    vTaskDelay( 1000 );
+    UARTprintf("Press any key to enable debug messages ... ");
+    globalDebugEnabled = 0;
     while (1) {
         // Turn on LED 1
         ledOut( 1 );
@@ -143,15 +147,19 @@ int8_t cmdParse( uint8_t *charBuffer, uint16_t nCharsRead ){
     int8_t retVal = CmdLineProcess( (char*)charBuffer, nCharsRead );
     switch (retVal) {
      case CMDLINE_BAD_CMD:
+         REPORT_ERROR( "ER:0006\n" );
          UARTprintf("[CMDLINE_BAD_CMD] %s\n", charBuffer);
          break;
      case CMDLINE_INVALID_ARG:
+         REPORT_ERROR( "ER:0007\n" );
          UARTprintf("[CMDLINE_INVALID_ARG] %s\n", charBuffer);
          break;
      case CMDLINE_TOO_FEW_ARGS:
+         REPORT_ERROR( "ER:0008\n" );
          UARTprintf("[CMDLINE_TOO_FEW_ARGS] %s\n", charBuffer);
          break;
      case CMDLINE_TOO_MANY_ARGS:
+         REPORT_ERROR( "ER:0009\n" );
          UARTprintf("[CMDLINE_TOO_MANY_ARGS] %s\n", charBuffer);
          break;
     }
@@ -258,6 +266,7 @@ void taskUsbCommandParser( void *pvParameters ) {
                 readPointer += remainderSize;
                 remainderSize = 0;
                 if( nCharsRead >= CMD_PARSER_BUF_LEN - 1 ){
+                    REPORT_ERROR( "ER:000A\n" );
                     UARTprintf("%22s: %s", "taskUsbCommandParser()", "Command buffer overflow, try a shorter command!\n");
                     USBBufferFlush( &g_sRxBuffer );
                     writePointer = charBuffer;
@@ -288,6 +297,7 @@ void taskUsbCommandParser( void *pvParameters ) {
             break;
 
         default:
+            REPORT_ERROR( "ER:000B\n" );
             UARTprintf("%22s: Unknown currentMode!\n", "taskUsbCommandParser()");
         }
     }
@@ -353,6 +363,7 @@ int Cmd_SW(int argc, char *argv[]) {
     for (i = 0; i < N_LONGS; i++) {
         charsWritten += usnprintf( &outBuffer[charsWritten], REPORT_SWITCH_BUF_SIZE - charsWritten, "%08x", g_SwitchStateDebounced.longValues[i] );
         if (charsWritten >= REPORT_SWITCH_BUF_SIZE - 1) {
+            REPORT_ERROR( "ER:000C\n" );
             UARTprintf("Cmd_SW(): string buffer overflow!\n");
             return (0);
         }
@@ -372,6 +383,7 @@ int Cmd_DEB(int argc, char *argv[]) {
         onOff = ustrtoul(argv[2], NULL, 0);     // 1: Debouncing ON
         inputSwitchId = decodeHwIndex( hwIndex, 1 );
         if ( inputSwitchId.hwIndexType==HW_INDEX_INVALID ) {
+            REPORT_ERROR( "ER:000D\n" );
             UARTprintf( "%22s: inputSwitchId = %s invalid\n", "Cmd_DEB()", argv[1] );
             return 0;
         }
@@ -387,6 +399,22 @@ int Cmd_DEB(int argc, char *argv[]) {
     return CMDLINE_TOO_FEW_ARGS;
 }
 
+int Cmd_SOE(int argc, char *argv[]){
+    uint8_t onOff;
+    if (argc == 2) {
+        onOff = ustrtoul(argv[1], NULL, 0);
+        if( onOff ){
+            ENABLE_SOLENOIDS();
+            UARTprintf( "Cmd_OUT(): 24 V solenoid power enabled.\n" );
+            return 0;
+        }else{
+            DISABLE_SOLENOIDS();
+            UARTprintf( "Cmd_OUT(): 24 V solenoid power disabled.\n" );
+            return 0;
+        }
+    }
+    return CMDLINE_TOO_FEW_ARGS;
+}
 
 int Cmd_OUT(int argc, char *argv[]) {
 //    OUT <hwIndex> <PWMlow> <tPulse> <PWMhigh>   or OUT <hwIndex> <PWMvalue>
@@ -411,6 +439,7 @@ int Cmd_OUT(int argc, char *argv[]) {
     switch( outLocation.hwIndexType ){
     case HW_INDEX_I2C:
         if (pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM)) {
+            REPORT_ERROR( "ER:000E\n" );
             UARTprintf("Cmd_OUT(): I2C PWMvalue must be < %d\n", (1 << N_BIT_PWM));
             return 0;
         }
@@ -420,6 +449,7 @@ int Cmd_OUT(int argc, char *argv[]) {
 
     case HW_INDEX_HWPWM:
         if ( pwmHigh > MAX_PWM || pwmLow > MAX_PWM ) {
+            REPORT_ERROR( "ER:000F\n" );
             UARTprintf("Cmd_OUT(): HW PWMvalue must be <= %d\n", MAX_PWM);
             return(0);
         }
@@ -428,15 +458,18 @@ int Cmd_OUT(int argc, char *argv[]) {
         return(0);
 
     case HW_INDEX_SWM:
+        REPORT_ERROR( "ER:0010\n" );
         UARTprintf("Cmd_OUT(): HW_INDEX_INVALID: %s\n", argv[1]);
         return (0);
 
     case HW_INDEX_INVALID:
+        REPORT_ERROR( "ER:0011\n" );
         UARTprintf("Cmd_OUT(): HW_INDEX_INVALID: %s\n", argv[1]);
         return (0);
 
     default:
-        ASSERT(0);
+        DISABLE_SOLENOIDS();
+        REPORT_ERROR( "ER:0012\n" );
     }
     return (0);
 }
@@ -463,6 +496,7 @@ int Cmd_RULE(int argc, char *argv[]) {
         id = ustrtoul(argv[1], NULL, 0);
         onOff = ustrtoul(argv[2], NULL, 0);
         if (id >= MAX_QUICK_RULES) {
+            REPORT_ERROR( "ER:0013\n" );
             UARTprintf("%22s: quickRuleId must be < %d\n", "Cmd_RULE()",
                     MAX_QUICK_RULES);
             return 0;
@@ -505,12 +539,14 @@ int Cmd_RUL(int argc, char *argv[]) {
         pwmLow = ustrtoul(argv[7], NULL, 0);
         trigPosEdge = ustrtoul(argv[8], NULL, 0) == 1;
         if (id >= MAX_QUICK_RULES) {
+            REPORT_ERROR( "ER:0014\n" );
             UARTprintf("%22s: quickRuleId must be < %d\n", "Cmd_RUL()",
                     MAX_QUICK_RULES);
             return 0;
         }
         inputSwitchId = decodeHwIndex( ustrtoul(argv[2], NULL, 0), 1 );
         if ( inputSwitchId.hwIndexType==HW_INDEX_INVALID ) {
+            REPORT_ERROR( "ER:0015\n" );
             UARTprintf( "%22s: inputSwitchId = %s invalid\n", "Cmd_RUL()", argv[2] );
             return 0;
         }
@@ -519,18 +555,21 @@ int Cmd_RUL(int argc, char *argv[]) {
         switch( outputDriverId.hwIndexType ){
         case HW_INDEX_I2C:
             if ( pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM) ) {
+                REPORT_ERROR( "ER:0016\n" );
                 UARTprintf( "%22s: pwmValues must be < %d\n", "Cmd_RUL()", (1 << N_BIT_PWM) );
                 return 0;
             }
             break;
         case HW_INDEX_HWPWM:
             if ( pwmHigh > MAX_PWM || pwmLow > MAX_PWM ) {
+                REPORT_ERROR( "ER:0017\n" );
                 UARTprintf( "%22s: HW pwmValues must be < %d\n", "Cmd_RUL()", MAX_PWM );
                 return(0);
             }
             break;
         case HW_INDEX_INVALID:
         case HW_INDEX_SWM:
+            REPORT_ERROR( "ER:0018\n" );
             UARTprintf( "%22s: outputDriverId = %s invalid\n", "Cmd_RUL()", argv[3] );
             return 0;
         }
@@ -551,6 +590,7 @@ int Cmd_LEC(int argc, char *argv[]) {   //Here we need re - initialize the SPI m
         if( channel<=2 ){
             baseAddr = g_spiState[channel].baseAdr;
         } else {
+            REPORT_ERROR( "ER:0019\n" );
             UARTprintf("%22s: Invalid LED channel (%d)\n", "Cmd_LEC()", channel);
             return(0);
         }
@@ -583,6 +623,7 @@ int Cmd_LED(int argc, char *argv[]) {   //Here we need to switch the serialComma
         if( channel <= 2 ){
             blobSize = ustrtoul(argv[2], NULL, 0);
             if( blobSize%3 || blobSize>N_LEDS_MAX*3 ){
+                REPORT_ERROR( "ER:001A\n" );
                 UARTprintf("%22s: Invalid number of bytes (%d)\n", "Cmd_LED()", blobSize);
                 return 0;
             }
@@ -596,12 +637,15 @@ int Cmd_LED(int argc, char *argv[]) {   //Here we need to switch the serialComma
                 g_LEDChannel = channel;
                 return PARS_MODE_BIN_LED;
             } else {
+                REPORT_ERROR( "ER:001B\n" );
                 UARTprintf("%22s: Timeout, could not access sendBuffer %d\n", "spiSend()", channel);
             }
         } else {
+            REPORT_ERROR( "ER:001C\n" );
             UARTprintf("%22s: Invalid LED channel (%d)\n", "Cmd_LED()", channel);
         }
     } else {
+        REPORT_ERROR( "ER:001D\n" );
         UARTprintf("%22s: Invalid number of arguments (%d)\n", "Cmd_LED()", argc);
     }
     return( 0 );
@@ -676,6 +720,7 @@ int Cmd_I2C(int argc, char *argv[]) {
     if ( argc == 5 ){
         channel  = ustrtoul(argv[1], NULL, 0);
         if ( channel > 3 ){
+            REPORT_ERROR( "ER:001E\n" );
             UARTprintf("%22s: I2C Channel must be <= 4\n", "Cmd_I2C()");
             return 0;
         }
@@ -685,10 +730,12 @@ int Cmd_I2C(int argc, char *argv[]) {
         writePointer = txBuffer;
         readPointer = (uint8_t*)argv[3];
         if( g_customI2CnBytesRx > CUSTOM_I2C_BUF_LEN ){
+            REPORT_ERROR( "ER:001F\n" );
             UARTprintf("%22s: Too many bytes to receive: %d, max. %d\n", "Cmd_I2C()", g_customI2CnBytesRx, CUSTOM_I2C_BUF_LEN);
             return 0;
         }
         if( nBytesTx > CUSTOM_I2C_BUF_LEN ){
+            REPORT_ERROR( "ER:0020\n" );
             UARTprintf("%22s: Too many bytes to send: %d, max. %d\n", "Cmd_I2C()", nBytesTx, CUSTOM_I2C_BUF_LEN);
             return 0;
         }
@@ -701,6 +748,7 @@ int Cmd_I2C(int argc, char *argv[]) {
         if( xSemaphoreTake( g_SemaCustomI2C, 3000 ) ){
             ts_i2cTransfer( channel, i2cAddr, txBuffer, nBytesTx, g_customI2CrxBuffer, g_customI2CnBytesRx, cmdI2CCallback, NULL );
         } else {
+            REPORT_ERROR( "ER:0020\n" );
             UARTprintf("%22s: Timeout, could not acquire custom I2C Semaphore\n", "Cmd_I2C()");
         }
         return 0;

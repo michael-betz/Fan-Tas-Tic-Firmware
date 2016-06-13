@@ -26,8 +26,11 @@
 //*****************************************************************************
 extern TaskHandle_t hUSBCommandParser;
 extern TaskHandle_t g_customI2cTask;        //Task to notify once custom i2c command is done
-extern SemaphoreHandle_t g_SemaCustomI2C;  //To ensure the custom I2C is done before next one starts
+extern SemaphoreHandle_t g_SemaCustomI2C;   //To ensure the custom I2C is done before next one starts
 extern uint8_t g_reportSwitchEvents;        //Flag: Should Switch events be reported on the serial port?
+extern uint8_t g_errorBuffer[8];            //For reporting 'ER:1234\n' style errors over USB
+
+#define REPORT_ERROR(errStr) {memcpy(g_errorBuffer,errStr,8); ts_usbSend(g_errorBuffer,8);}
 
 //*****************************************************************************
 // Function / Task declaations
@@ -42,6 +45,7 @@ extern int Cmd_DISC(int argc, char *argv[]);
 extern int Cmd_SW(int argc, char *argv[]);
 extern int Cmd_SWE(int argc, char *argv[]);
 extern int Cmd_DEB(int argc, char *argv[]);
+extern int Cmd_SOE(int argc, char *argv[]);
 extern int Cmd_OUT(int argc, char *argv[]);
 extern int Cmd_RUL(int argc, char *argv[]);
 extern int Cmd_RULE(int argc, char *argv[]);

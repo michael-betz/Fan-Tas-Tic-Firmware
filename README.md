@@ -91,19 +91,23 @@ to see status and debug messages from the Fan-Tas-Tic firmware.
 
 The `DEVICE` port provides a virtual serial port
 which is meant to communicate with the (Python) host application. This port listens to the same commands but does not echo any
-input characters, status messages or errors, which makes it easier to talk to programatically.
+input characters or status messages, which makes it easier to talk to programatically.
+
+Note that the `DEVICE` port reports errors in the form of an `ER:xxxx` error code. They can be looked up in (this)[https://docs.google.com/spreadsheets/d/1QlxT6QhTLHodxV4uOGEEIK3jQQLPyiI4lmSObMyx4UE/edit?usp=sharing] table. 
 
         **************************************************
          Available commands   <required>  [optional]
         **************************************************
         ?     : Display list of commands
         *IDN? : Display ID and version info
-        SWE   : <OnOff> En./Dis. reporting of switch events.
+        DISC  : Discover PCF8574 GPIO expanders on I2C busses
+        SWE   : <OnOff> En./Dis. reporting of switch events
         DEB   : <hwIndex> <OnOff> En./Dis. 12 ms debouncing
         SW?   : Return the state of ALL switches (40 bytes)
+        SOE   : <OnOff> En./Dis. 24 V solenoid power (careful!)
         OUT   : <hwIndex> <PWMlow> [tPulse] [PWMhigh]
-        RUL   : <ID> <IDin> <IDout> <trHoldOff> <tPulse>
-                <pwmOn> <pwmOff> <bPosEdge>
+        RUL   : <ID> <IDin> <IDout> <trHoldOff>
+                <tPulse> <pwmOn> <pwmOff> <bPosEdge>
         RULE  : En./Dis a prev. def. rule: RULE <ID> <OnOff>
         LEC   : <channel> <spiSpeed [Hz]> [frameFmt]
         LED   : <channel> <nBytes>\n<binary blob of nBytes>
@@ -148,6 +152,18 @@ Sent:
 Received:
 
         SW:00000000123456789ABCDEF0AFFE0000DEAD0000BEEF0000C0FFEE00000000000000000000000000\n
+
+## `SOE` enable 24 V solenoid power
+
+The Fan-Tas-Tic mainboard foresees a relay to disable the 24 V supply voltage to the solenoids. This is for safety reasons (in case of firmware hang-ups) -- but also to make sure the solenoid drivers do not have power until they are initialized.
+So the solenoids have to be manually activated by the user.
+
+__Example__
+
+Sent:
+        SOE 1\n
+        
+Enables the 24 V supply to the solenoids (sets PE0 high).        
 
 ## `OUT` set a solenoid driver output
  * hwIndex 
