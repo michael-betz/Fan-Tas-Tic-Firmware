@@ -127,7 +127,7 @@ void initGpio(){
     ROM_GPIOPinTypeUSBAnalog(GPIO_PORTD_BASE, GPIO_PIN_5 | GPIO_PIN_4);
     // Init switch matrix shift register driving outputs
     ROM_GPIODirModeSet( GPIO_PORTB_BASE, GPIO_PIN_1 | GPIO_PIN_0, GPIO_DIR_MODE_OUT);
-    ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_1 | GPIO_PIN_0, GPIO_STRENGTH_12MA, GPIO_PIN_TYPE_STD);
+    ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_1 | GPIO_PIN_0, GPIO_STRENGTH_12MA, GPIO_PIN_TYPE_OD );
     // Enable the GPIO pins for the LED (PF2 & PF3).
     ROM_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2);
     // Enable the GPIO pins for the 24V enbale (PE0).
