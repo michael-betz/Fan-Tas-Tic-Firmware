@@ -7,6 +7,7 @@
 
 #ifndef FAN_TAS_TIC_CONTROLLER_MYTASKS_H_
 #define FAN_TAS_TIC_CONTROLLER_MYTASKS_H_
+#include <string.h>
 
 //*****************************************************************************
 // Defines

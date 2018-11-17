@@ -147,7 +147,7 @@ void initGpio(){
 
 }
 
-myPWMGenConfigure(uint32_t ui32Base, uint32_t ui32Gen){
+void myPWMGenConfigure(uint32_t ui32Base, uint32_t ui32Gen){
     // Enable and configure one of the 4 PWM generators (2 PWM outputs each)
     // Compute the generator's base address.
     ui32Gen += ui32Base;

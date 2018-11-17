@@ -220,7 +220,7 @@ void spiISR( uint8_t channel ){
     //Is called by uDMA interrupt after one block has been transferred! (takes 640 us)
     //It takes < 50 us to refresh a buffer
     uint32_t temp;
-    uint16_t *bufferToRefill;
+    uint16_t *bufferToRefill = NULL;
     t_spiTransferState *state = &g_spiState[channel];
     temp = ROM_SSIIntStatus(state->baseAdr, 1);
     ROM_SSIIntClear(state->baseAdr, temp);
