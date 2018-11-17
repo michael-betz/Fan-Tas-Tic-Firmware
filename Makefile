@@ -1,14 +1,12 @@
-
 #--------------------------------
 # Misc constants
 #--------------------------------
 TARGET      = fantastic
-USB_SERIAL  = /dev/ttyUSB0
+USB_SERIAL  = /dev/ttyACM0
 PART        = TM4C123GH6PM
 TIVAWARE    = /home/michael/ti/tivaware
-GIT_VERSION = $(shell git describe --abbrev=4 --dirty --always --tags)
-PREFIX      = arm-none-eabi
-CC			= ${PREFIX}-gcc
+TOOLS_PREFIX= arm-none-eabi-
+CC			= ${TOOLS_PREFIX}gcc
 
 #--------------------------------
 # Source files (.c)
@@ -34,43 +32,28 @@ INC        += -I$(TIVAWARE)/third_party/FreeRTOS/Source/portable/GCC/ARM_CM4F
 # Compiler flags
 #--------------------------------
 ## Warnings, standards
-CFLAGS      = -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
-CFLAGS     += -c -O0 -Wall -Werror -std=c99
+CFLAGS      = -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=softfp
+CFLAGS     += -c -O3 -Wall -Werror -std=c99
 CFLAGS     += -Dgcc -DPART_${PART} -DTARGET_IS_TM4C123_RB1
-# CFLAGS     += -ffunction-sections -fdata-sections
 CFLAGS     += -DUART_BUFFERED
-CFLAGS     += -DGIT_VERSION=\"$(GIT_VERSION)\"
+# CFLAGS     += -ffunction-sections -fdata-sections
 
 #--------------------------------
 # Linker flags
 #--------------------------------
-LDFLAGS     = -Wl,-T,project.ld
-LDFLAGS    += -Wl,-Map=$(TARGET).map,--cref
-# Optional, but often ends up with smaller code
-# LDFLAGS    += -Wl,--gc-sections
-LDFLAGS    += -Wl,--relax,--stats,--verbose
+LDFLAGS     = -Wl,-T,tm4c123gh6pm.lds
+LDFLAGS    += -Wl,--relax,--stats
 LDFLAGS    += -Wl,-L$(TIVAWARE)/driverlib/gcc
 LDFLAGS    += -Wl,-L$(TIVAWARE)/usblib/gcc
+# LDFLAGS    += -Wl,--gc-sections
 
 all: $(TARGET).axf
-
-bootload: clean $(TARGET).hex
-	-pkill miniterm*
-	-pkill xterm*
-	avrdude -P $(USB_SERIAL) -b 57600 -c arduino -p atmega328p -U flash:w:$(TARGET).hex
-	xterm -fa monaco -fs 15 -bg black -fg green -hold -e "miniterm.py $(USB_SERIAL) 115200"&
 
 %.o: %.c
 	@echo -----------------------------------------------
 	@echo  Compiling $@
 	@echo -----------------------------------------------
 	$(CC) $(INC) $(CFLAGS) -o $@ -c $<
-
-%.hex: %.axf
-	@echo -----------------------------------------------
-	@echo  Generating intel hex file
-	@echo -----------------------------------------------
-	$(TOOLS_PREFIX)objcopy -O ihex -R .eeprom $< $@
 
 $(TARGET).axf: $(OBJS)
 	@echo -----------------------------------------------
@@ -80,7 +63,19 @@ $(TARGET).axf: $(OBJS)
 	chmod -x $@
 	$(TOOLS_PREFIX)size $@
 
+%.bin: %.axf
+	$(TOOLS_PREFIX)objcopy -O binary $< $@
+
+flash: $(TARGET).bin
+	openocd --file board/ek-tm4c123gxl.cfg -c "program $< verify reset exit"
+
+terminal: clean $(TARGET).hex
+	-pkill miniterm*
+	-pkill xterm*
+	xterm -fa monaco -fs 15 -bg black -fg green -hold -e "miniterm.py $(USB_SERIAL) 115200"&
+
 clean:
 	rm -f $(TARGET).hex $(TARGET).lst $(TARGET).axf $(TARGET).map $(OBJS)
+	rm -f $(TARGET).bin
 
-.PHONY: clean all bootload
+.PHONY: clean all flash terminal
