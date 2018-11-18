@@ -229,7 +229,7 @@ void i2cDoneCallback(void* pvCallbackData, uint_fast8_t ui8Status) {
 //    uint8_t queueSize;
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     uint8_t *tempReadState = pvCallbackData;
-    *tempReadState = ui8Status;                 //Store status value of this transfer in global array
+    *tempReadState = ui8Status;                                  //Store status value of this transfer in global array
     xSemaphoreTakeFromISR( g_pcfReadsInProgressSema, NULL );     //Decrement `jobs in progress` counter
     if ( xQueueIsQueueEmptyFromISR(g_pcfReadsInProgressSema) ) { //We're done with all jobs
         configASSERT( g_taskToNotifyI2CscanDone != NULL );
@@ -251,7 +251,7 @@ void i2cStartPCFL8574refresh() {
     for ( nPcf = 0; nPcf <= PCF_MAX_PER_CHANNEL - 1; nPcf++ ) {
         for ( nChannel = 0; nChannel <= 3; nChannel++ ) {
             previousState = g_I2CState[nChannel][nPcf];
-            // If a previous read furing init succeeded, start another one
+            // If a previous read succeeded, start another one
             if( previousState == I2CM_STATUS_DISABLED ){
                 continue;
             }
@@ -259,8 +259,9 @@ void i2cStartPCFL8574refresh() {
                 DISABLE_SOLENOIDS();
                 UARTprintf( "%22s: I2C hwIndex: 0x%2x, error %d\n", "i2cStartPCFL8574refresh()", 64 + nChannel*PCF_MAX_PER_CHANNEL*8 + nPcf*8, previousState );
                 REPORT_ERROR( "ER:0001\n" );
-//                g_I2CState[nChannel][nPcf] = I2CM_STATUS_DISABLED;
-//                continue;
+                g_I2CState[nChannel][nPcf] = I2CM_STATUS_DISABLED;
+                g_reDiscover = 1;
+                continue;
             }
             if( xSemaphoreGive( g_pcfReadsInProgressSema ) ) { //Increment reads in progress counter
                 ts_i2cTransfer( nChannel, PCF_LOWEST_ADDR + nPcf, NULL, 0, &g_SwitchStateSampled.switchState.i2cReadData[nChannel][nPcf], 1, i2cDoneCallback, &g_I2CState[nChannel][nPcf] );
@@ -431,10 +432,12 @@ void setupQuickRule(uint8_t id, t_outputBit inputSwitchId,
 }
 
 void i2cDiscover(){
-    uint8_t nPcf, nChannel, nDiscovered=0;
+    unsigned nPcf, nChannel, nDiscovered=0;
+    const uint8_t z=0;
+    disableAllWriters();
     // Reset all read stati
-    for ( nPcf=0; nPcf<=PCF_MAX_PER_CHANNEL-1; nPcf++ ) {
-        for ( nChannel=0; nChannel<=3; nChannel++ ) {
+    for (nChannel=0; nChannel<=3; nChannel++) {
+        for (nPcf=0; nPcf<=PCF_MAX_PER_CHANNEL-1; nPcf++) {
             g_I2CState[nChannel][nPcf] = I2CM_STATUS_SUCCESS;
         }
     }
@@ -446,7 +449,8 @@ void i2cDiscover(){
     for ( nPcf=0; nPcf<=PCF_MAX_PER_CHANNEL-1; nPcf++ ) {
         for ( nChannel=0; nChannel<=3; nChannel++ ) {
             if( g_I2CState[nChannel][nPcf] == I2CM_STATUS_SUCCESS ){
-                UARTprintf( "0x%02x ", 64 + nChannel*PCF_MAX_PER_CHANNEL + nPcf*8 );
+                ts_i2cTransfer(nChannel, nPcf + PCF_LOWEST_ADDR, &z, 1, NULL, 0, NULL, NULL);
+                UARTprintf("0x%02x ", 0x40 + nChannel * 0x40 + nPcf * 8);
                 nDiscovered++;
             } else {
                 g_I2CState[nChannel][nPcf] = I2CM_STATUS_DISABLED;
@@ -481,9 +485,9 @@ void taskDebouncer(void *pvParameters) {
     readSwitchMatrix();
     xLastWakeTime = xTaskGetTickCount();
     while (1) {
-        if (ulTaskNotifyTake( pdTRUE, portMAX_DELAY)) {    // Wait for i2c scanner ISR to finish
+        if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {    // Wait for i2c scanner ISR to finish
             // If rediscover flag is set, rescan all i2c inputs
-            if( g_reDiscover ){
+            if(g_reDiscover){
                 i2cDiscover();
                 g_reDiscover = 0;
             }
@@ -585,18 +589,12 @@ void handleBitRules( t_PCLOutputByte *outListPtr, uint8_t dt ) {
     }
 }
 
-void taskPCFOutWriter(void *pvParameters) {
-    // Dispatch I2C write commands to PCL GPIO extenders periodically
-    // Use binary code modulation for N bit PWM
-    UARTprintf("%22s: Started!\n", "taskPCLOutWriter()");
-    uint8_t i, j, lastTickCount = 0;
-    uint8_t bcmCycleCounter = 0;    //Which bit to output
-//    uint32_t c = 0, ticks;
-    TickType_t xLastWakeTime;
+void disableAllWriters(void){
+    unsigned i, j;
     t_PCLOutputByte *outListPtr = g_outWriterList;
-//  -------------------------------------------------------
-//   Init Data structure for caching the output values
-//  -------------------------------------------------------
+    //  -------------------------------------------------------
+    //   Init Data structure for caching the output values
+    //  -------------------------------------------------------
     for (i = 0; i < OUT_WRITER_LIST_LEN; i++) {
         for (j = 0; j < N_BIT_PWM; j++) {
             outListPtr->bcmBuffer[j] = 0x00;    //Clear all bits by default
@@ -604,6 +602,18 @@ void taskPCFOutWriter(void *pvParameters) {
         outListPtr->i2cChannel = -1;            //This marks the entry as invalid
         outListPtr++;
     }
+}
+
+void taskPCFOutWriter(void *pvParameters) {
+    // Dispatch I2C write commands to PCL GPIO extenders periodically
+    // Use binary code modulation for N bit PWM
+    UARTprintf("%22s: Started!\n", "taskPCLOutWriter()");
+    unsigned i, lastTickCount = 0;
+    unsigned bcmCycleCounter = 0;    //Which bit to output
+//    uint32_t c = 0, ticks;
+    TickType_t xLastWakeTime;
+    t_PCLOutputByte *outListPtr;
+    disableAllWriters();
     vTaskDelay(1);
     xLastWakeTime = xTaskGetTickCount();
     while (1) {
