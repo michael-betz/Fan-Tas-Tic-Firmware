@@ -1,81 +1,69 @@
-#--------------------------------
-# Misc constants
-#--------------------------------
-TARGET      = fantastic
-USB_SERIAL  = /dev/ttyACM0
-PART        = TM4C123GH6PM
-TIVAWARE    = /home/michael/ti/tivaware
-TOOLS_PREFIX= arm-none-eabi-
-CC			= ${TOOLS_PREFIX}gcc
+# VERBOSE = 1
+TARGET = fantastic
+PART = TM4C123GH6PM
+ROOT = /home/michael/ti/tivaware
+GIT_VERSION = $(shell git describe --abbrev=4 --dirty --always --tags)
+include ${ROOT}/makedefs
+
+LIBC = /usr/lib/arm-none-eabi/newlib/armv7e-m/fpu/fpv5-d16/libc.a
 
 #--------------------------------
 # Source files (.c)
 #--------------------------------
-SRCS        = $(wildcard *.c)
-SRCS       += $(wildcard utils/*.c)
-SRCS       += $(wildcard drivers/*.c)
-SRCS       += $(wildcard FreeRTOS/*.c)
-SRCS       += $(wildcard $(TIVAWARE)/third_party/FreeRTOS/Source/*.c)
-SRCS       += $(wildcard $(TIVAWARE)/third_party/FreeRTOS/Source/portable/GCC/ARM_CM4F/*.c)
-SRCS       += $(TIVAWARE)/third_party/FreeRTOS/Source/portable/MemMang/heap_2.c
-OBJS        = $(subst .c,.o,$(SRCS))
+# Folders to search
+VPATH       = utils drivers
+VPATH      += $(ROOT)/third_party/FreeRTOS/Source
+VPATH      += $(ROOT)/third_party/FreeRTOS/Source/portable/GCC/ARM_CM4F
+VPATH      += $(ROOT)/third_party/FreeRTOS/Source/portable/MemMang
+# Files to compile
+SRCS        = i2cHandlerTask.c  main.c  mySpi.c  myTasks.c  startup_gcc.c
+SRCS       += usbCallbacks.c  usb_serial_structs.c
+SRCS       += cmdline.c  i2cm_drv.c  uartstdio.c  ustdlib.c
+# FreeRTOS stuff from tivaware folder
+SRCS       += croutine.c  event_groups.c  list.c  queue.c  tasks.c  timers.c
+SRCS       += port.c heap_2.c
+# Turn into gcc/*.o files, add libs and linker scripts
+OBJS		= $(addprefix ${COMPILER}/, $(subst .c,.o,$(SRCS)))
+OBJS       += ${ROOT}/usblib/${COMPILER}/libusb.a
+OBJS       += ${ROOT}/driverlib/${COMPILER}/libdriver.a
+OBJS       += $(TARGET).ld
 
 #--------------------------------
 # Header files (.h)
 #--------------------------------
-INC         = -I. -Iutils -Idrivers
-INC        += -I$(TIVAWARE)
-INC        += -I$(TIVAWARE)/third_party/FreeRTOS/Source/include
-INC        += -I$(TIVAWARE)/third_party/FreeRTOS/Source/portable/GCC/ARM_CM4F
+IPATH 	    = . utils drivers
+IPATH      += $(ROOT)
+IPATH      += $(ROOT)/third_party/FreeRTOS/Source/include
+IPATH      += $(ROOT)/third_party/FreeRTOS/Source/portable/GCC/ARM_CM4F
 
 #--------------------------------
-# Compiler flags
+# Flags
 #--------------------------------
-## Warnings, standards
-CFLAGS      = -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=softfp
-CFLAGS     += -c -O3 -Wall -Werror -std=c99
-CFLAGS     += -Dgcc -DPART_${PART} -DTARGET_IS_TM4C123_RB1
-CFLAGS     += -DUART_BUFFERED
-# CFLAGS     += -ffunction-sections -fdata-sections
+CFLAGS 	   += -DGIT_VERSION=\"$(GIT_VERSION)\"
+CFLAGS 	   += -DTARGET_IS_TM4C123_RB1 -DUART_BUFFERED
+SCATTERgcc_$(TARGET) = $(TARGET).ld
+ENTRY_$(TARGET) = ResetISR
 
-#--------------------------------
-# Linker flags
-#--------------------------------
-LDFLAGS     = -Wl,-T,tm4c123gh6pm.lds
-LDFLAGS    += -Wl,--relax,--stats
-LDFLAGS    += -Wl,-L$(TIVAWARE)/driverlib/gcc
-LDFLAGS    += -Wl,-L$(TIVAWARE)/usblib/gcc
-# LDFLAGS    += -Wl,--gc-sections
+# The default rule, which causes the $(TARGET) example to be built.
+all: ${COMPILER}
+all: ${COMPILER}/$(TARGET).axf
 
-all: $(TARGET).axf
+# The rule to create the target directory.
+${COMPILER}:
+	mkdir -p ${COMPILER}
 
-%.o: %.c
-	@echo -----------------------------------------------
-	@echo  Compiling $@
-	@echo -----------------------------------------------
-	$(CC) $(INC) $(CFLAGS) -o $@ -c $<
+${COMPILER}/$(TARGET).axf: $(OBJS)
 
-$(TARGET).axf: $(OBJS)
-	@echo -----------------------------------------------
-	@echo  Linking together an application .axf file
-	@echo -----------------------------------------------
-	$(CC) $(LDFLAGS) -o $@ $^ -Wl,-lusb,-ldriver
-	chmod -x $@
-	$(TOOLS_PREFIX)size $@
-
-%.bin: %.axf
-	$(TOOLS_PREFIX)objcopy -O binary $< $@
-
-flash: $(TARGET).bin
+flash: ${COMPILER}/$(TARGET).axf
 	openocd --file board/ek-tm4c123gxl.cfg -c "program $< verify reset exit"
 
-terminal: clean $(TARGET).hex
-	-pkill miniterm*
-	-pkill xterm*
-	xterm -fa monaco -fs 15 -bg black -fg green -hold -e "miniterm.py $(USB_SERIAL) 115200"&
-
+# The rule to clean out all the build products.
 clean:
-	rm -f $(TARGET).hex $(TARGET).lst $(TARGET).axf $(TARGET).map $(OBJS)
-	rm -f $(TARGET).bin
+	rm -rf ${COMPILER} ${wildcard *~}
 
-.PHONY: clean all flash terminal
+# Include the automatically generated dependency files.
+ifneq (${MAKECMDGOALS},clean)
+-include ${wildcard ${COMPILER}/*.d} __dummy__
+endif
+
+.PHONY: all flash clean

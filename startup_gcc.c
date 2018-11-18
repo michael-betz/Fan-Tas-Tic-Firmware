@@ -259,11 +259,11 @@ void (* const g_pfnVectors[])(void) =
 // for the "data" segment resides immediately following the "text" segment.
 //
 //*****************************************************************************
-extern uint32_t __data_load__;
-extern uint32_t __data_start__;
-extern uint32_t __data_end__;
-extern uint32_t __bss_start__;
-extern uint32_t __bss_end__;
+extern uint32_t _ldata;
+extern uint32_t _data;
+extern uint32_t _edata;
+extern uint32_t _bss;
+extern uint32_t _ebss;
 
 //*****************************************************************************
 //
@@ -283,8 +283,8 @@ ResetISR(void)
     //
     // Copy the data segment initializers from flash to SRAM.
     //
-    pui32Src = &__data_load__;
-    for(pui32Dest = &__data_start__; pui32Dest < &__data_end__; )
+    pui32Src = &_ldata;
+    for(pui32Dest = &_data; pui32Dest < &_edata; )
     {
         *pui32Dest++ = *pui32Src++;
     }
@@ -292,8 +292,8 @@ ResetISR(void)
     //
     // Zero fill the bss segment.
     //
-    __asm("    ldr     r0, =__bss_start__\n"
-          "    ldr     r1, =__bss_end__\n"
+    __asm("    ldr     r0, =_bss\n"
+          "    ldr     r1, =_ebss\n"
           "    mov     r2, #0\n"
           "    .thumb_func\n"
           "zero_loop:\n"
@@ -324,19 +324,25 @@ ResetISR(void)
 
 static void NmiSR(void)
 {
+    // blue
     DISABLE_SOLENOIDS();
+    ROM_GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2, 1<<2);
     while(1) {}
 }
 
 static void FaultISR(void)
 {
+    // green
     DISABLE_SOLENOIDS();
+    ROM_GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2, 2<<2);
     while(1) {}
 }
 
 static void IntDefaultHandler(void)
 {
+    // blue + green
     DISABLE_SOLENOIDS();
+    ROM_GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2, 3<<2);
     while(1) {}
 }
 
