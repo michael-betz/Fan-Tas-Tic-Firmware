@@ -260,7 +260,7 @@ void i2cStartPCFL8574refresh() {
                 UARTprintf( "%22s: I2C hwIndex: 0x%2x, error %d\n", "i2cStartPCFL8574refresh()", 64 + nChannel*PCF_MAX_PER_CHANNEL*8 + nPcf*8, previousState );
                 REPORT_ERROR( "ER:0001\n" );
                 g_I2CState[nChannel][nPcf] = I2CM_STATUS_DISABLED;
-                g_reDiscover = 1;
+                // g_reDiscover = 1;
                 continue;
             }
             if( xSemaphoreGive( g_pcfReadsInProgressSema ) ) { //Increment reads in progress counter
