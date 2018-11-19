@@ -4,20 +4,20 @@
 //
 // Copyright (c) 2007-2015 Texas Instruments Incorporated.  All rights reserved.
 // Software License Agreement
-// 
+//
 // Texas Instruments (TI) is supplying this software for use solely and
 // exclusively on TI's microcontroller products. The software is owned by
 // TI and/or its suppliers, and is protected under applicable copyright
 // laws. You may not combine this software with "viral" open-source
 // software in order to form a larger program.
-// 
+//
 // THIS SOFTWARE IS PROVIDED "AS IS" AND WITH ALL FAULTS.
 // NO WARRANTIES, WHETHER EXPRESS, IMPLIED OR STATUTORY, INCLUDING, BUT
 // NOT LIMITED TO, IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
 // A PARTICULAR PURPOSE APPLY TO THIS SOFTWARE. TI SHALL NOT, UNDER ANY
 // CIRCUMSTANCES, BE LIABLE FOR SPECIAL, INCIDENTAL, OR CONSEQUENTIAL
 // DAMAGES, FOR ANY REASON WHATSOEVER.
-// 
+//
 // This is part of revision 2.1.1.71 of the Tiva Utility Library.
 //
 //*****************************************************************************
@@ -49,7 +49,9 @@
 #include "myTasks.h"
 
 
-uint8_t globalDebugEnabled = 1; //Will be set to 1 as soon as something is received over UART
+// When true, Print to UART and USB, When false, print to USB
+// Will be set to 1 as soon as something is received over UART
+bool globalDebugEnabled = 1;
 
 //*****************************************************************************
 //
@@ -65,17 +67,6 @@ uint8_t globalDebugEnabled = 1; //Will be set to 1 as soon as something is recei
 //
 //*****************************************************************************
 #ifdef UART_BUFFERED
-
-//*****************************************************************************
-//
-// This global controls whether or not we are echoing characters back to the
-// transmitter.  By default, echo is enabled but if using this module as a
-// convenient method of implementing a buffered serial interface over which
-// you will be running an application protocol, you are likely to want to
-// disable echo by calling UARTEchoSet(false).
-//
-//*****************************************************************************
-static bool g_bDisableEcho;
 
 //*****************************************************************************
 //
@@ -1527,34 +1518,6 @@ UARTFlushTx(bool bDiscard)
 
 //*****************************************************************************
 //
-//! Enables or disables echoing of received characters to the transmitter.
-//!
-//! \param bEnable must be set to \b true to enable echo or \b false to
-//! disable it.
-//!
-//! This function, available only when the module is built to operate in
-//! buffered mode using \b UART_BUFFERED, may be used to control whether or not
-//! received characters are automatically echoed back to the transmitter.  By
-//! default, echo is enabled and this is typically the desired behavior if
-//! the module is being used to support a serial command line.  In applications
-//! where this module is being used to provide a convenient, buffered serial
-//! interface over which application-specific binary protocols are being run,
-//! however, echo may be undesirable and this function can be used to disable
-//! it.
-//!
-//! \return None.
-//
-//*****************************************************************************
-#if defined(UART_BUFFERED) || defined(DOXYGEN)
-void
-UARTEchoSet(bool bEnable)
-{
-    g_bDisableEcho = !bEnable;
-}
-#endif
-
-//*****************************************************************************
-//
 //! Handles UART interrupts.
 //!
 //! This function handles interrupts from the UART.  It will copy data from the
@@ -1572,172 +1535,44 @@ UARTStdioIntHandler(void)
     uint32_t ui32Ints;
     int8_t cChar;
     int32_t i32Char;
-    static bool bLastWasCR = false;
 
-    //
     // Get and clear the current interrupt source(s)
-    //
     ui32Ints = MAP_UARTIntStatus(g_ui32Base, true);
     MAP_UARTIntClear(g_ui32Base, ui32Ints);
 
-    //
     // Are we being interrupted because the TX FIFO has space available?
-    //
     if(ui32Ints & UART_INT_TX)
     {
-        //
         // Move as many bytes as we can into the transmit FIFO.
-        //
         UARTPrimeTransmit(g_ui32Base);
 
-        //
         // If the output buffer is empty, turn off the transmit interrupt.
-        //
         if(TX_BUFFER_EMPTY)
         {
             MAP_UARTIntDisable(g_ui32Base, UART_INT_TX);
         }
     }
 
-    //
     // Are we being interrupted due to a received character?
-    //
-    if(ui32Ints & (UART_INT_RX | UART_INT_RT))
-    {
-        //
+    if(ui32Ints & (UART_INT_RX | UART_INT_RT)){
         // Get all the available characters from the UART.
-        //
-        while(MAP_UARTCharsAvail(g_ui32Base))
-        {
-            //
+        while(MAP_UARTCharsAvail(g_ui32Base)){
             // Read a character
-            //
             i32Char = MAP_UARTCharGetNonBlocking(g_ui32Base);
             cChar = (unsigned char)(i32Char & 0xFF);
 
-            //
-            // If echo is disabled, we skip the various text filtering
-            // operations that would typically be required when supporting a
-            // command line.
-            //
-            if(!g_bDisableEcho)
-            {
-                //
-                // Handle backspace by erasing the last character in the
-                // buffer.
-                //
-                if(cChar == '\b')
-                {
-                    //
-                    // If there are any characters already in the buffer, then
-                    // delete the last.
-                    //
-                    if(!RX_BUFFER_EMPTY)
-                    {
-                        //
-                        // Rub out the previous character on the users
-                        // terminal.
-                        //
-                        UARTwrite("\b \b", 3);
-
-                        //
-                        // Decrement the number of characters in the buffer.
-                        //
-                        if(g_ui32UARTRxWriteIndex == 0)
-                        {
-                            g_ui32UARTRxWriteIndex = UART_RX_BUFFER_SIZE - 1;
-                        }
-                        else
-                        {
-                            g_ui32UARTRxWriteIndex--;
-                        }
-                    }
-
-                    //
-                    // Skip ahead to read the next character.
-                    //
-                    continue;
-                }
-
-                //
-                // If this character is LF and last was CR, then just gobble up
-                // the character since we already echoed the previous CR and we
-                // don't want to store 2 characters in the buffer if we don't
-                // need to.
-                //
-                if((cChar == '\n') && bLastWasCR)
-                {
-                    bLastWasCR = false;
-                    continue;
-                }
-
-                //
-                // See if a newline or escape character was received.
-                //
-                if((cChar == '\r') || (cChar == '\n') || (cChar == 0x1b))
-                {
-                    //
-                    // If the character is a CR, then it may be followed by an
-                    // LF which should be paired with the CR.  So remember that
-                    // a CR was received.
-                    //
-                    if(cChar == '\r')
-                    {
-                        bLastWasCR = 1;
-                    }
-
-                    //
-                    // Regardless of the line termination character received,
-                    // put a CR in the receive buffer as a marker telling
-                    // UARTgets() where the line ends.  We also send an
-                    // additional LF to ensure that the local terminal echo
-                    // receives both CR and LF.
-                    //
-                    cChar = '\r';
-                    UARTwrite("\n", 1);
-                }
-            }
-
-            //
-            // If there is space in the receive buffer, put the character
-            // there, otherwise throw it away.
-            //
-//            if(!RX_BUFFER_FULL)
-//            {
-//                //
-//                // Store the new character in the receive buffer
-//                //
-//                g_pcUARTRxBuffer[g_ui32UARTRxWriteIndex] =
-//                    (unsigned char)(i32Char & 0xFF);
-//                ADVANCE_RX_BUFFER_INDEX(g_ui32UARTRxWriteIndex);
-//
-//                //
-//                // If echo is enabled, write the character to the transmit
-//                // buffer so that the user gets some immediate feedback.
-//                //
-//                if(!g_bDisableEcho)
-//                {
-//                    UARTwrite((const char *)&cChar, 1);
-//                }
-//            }
             // Echo the character to the Terminal AND the USB parser
-            if( globalDebugEnabled == 0 ){
+            if(globalDebugEnabled == 0){
                 globalDebugEnabled = 1;
                 UARTprintf("debug enabled !!!\n");
             }
             UARTwrite((const char *)&cChar, 1);
             BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-            USBBufferWrite( &g_sRxBuffer, (uint8_t *)&cChar, 1 );
-            vTaskNotifyGiveFromISR( hUSBCommandParser, &xHigherPriorityTaskWoken );
-            portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
+            USBBufferWrite(&g_sRxBuffer, (uint8_t *)&cChar, 1);
+            // Trigger command parser
+            vTaskNotifyGiveFromISR(hUSBCommandParser, &xHigherPriorityTaskWoken);
+            portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
         }
-
-        //
-        // If we wrote anything to the transmit buffer, make sure it actually
-        // gets transmitted.
-        //
-        UARTPrimeTransmit(g_ui32Base);
-        MAP_UARTIntEnable(g_ui32Base, UART_INT_TX);
     }
 }
 #endif

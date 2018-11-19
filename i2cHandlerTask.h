@@ -16,7 +16,7 @@
 #define PCF_MAX_PER_CHANNEL 8
 // Lowest possible I2C Address of a PCF8574 IO extender (all address pins low)
 #define PCF_LOWEST_ADDR 0x20
-// Flag: No PCF8574 is connected at this address (set during boot)
+// Flag for g_I2CState: skip this PCF chip
 #define I2CM_STATUS_DISABLED  42
 // Read all PCF inputs and process quickRules every xxx ms
 #define DEBOUNCER_READ_PERIOD 3
@@ -101,6 +101,7 @@ typedef struct {
     int8_t i2cChannel;
     uint8_t i2cAddress;
     uint8_t bcmBuffer[N_BIT_PWM];   // To do binary code modulation, these 4 bytes will be written in sequence to the PCF
+    uint8_t lastState;              // Last I2CM state
     t_BitModifyRules bitRules[8];   // Hold the state of each output pin
 } t_PCLOutputByte;
 
@@ -117,7 +118,7 @@ extern t_switchStateConverter g_SwitchStateToggled;		//Bits which changed
 extern t_switchStateConverter g_SwitchStateNoDebounce;  //Debouncing-OFF flags
 extern t_quickRule g_QuickRuleList[MAX_QUICK_RULES];	//List of Quickrules
 
-extern uint8_t g_reDiscover;                            // Flag Rescann all I2C inputs
+extern bool g_reDiscover;                            // Flag Rescann all I2C inputs
 
 //*****************************************************************************
 // Global functions

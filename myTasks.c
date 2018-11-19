@@ -46,6 +46,7 @@
 #include "myTasks.h"
 #include "mySpi.h"
 #include "i2cHandlerTask.h"
+#include "main.h"
 
 //*****************************************************************************
 // Global vars.
@@ -100,9 +101,7 @@ uint16_t strMyStrip(uint8_t *cmdString, uint16_t cmdLen) {
 }
 
 void taskDemoLED(void *pvParameters) {
-// Flash the LEDs on the launchpad
-//    static char debugBuffer[256];
-//    uint16_t i;
+    // Flash the LEDs on the launchpad
     // Set up the UART which is connected to the virtual debugging COM port
     UARTStdioConfig(0, 115200, SYSTEM_CLOCK);
     UARTprintf("\n\n\n\n"
@@ -112,7 +111,7 @@ void taskDemoLED(void *pvParameters) {
     UARTprintf("%22s: %s", "taskDemoLED()", "Started!\n");
     vTaskDelay( 1000 );
     UARTprintf("Press any key to enable debug messages ... ");
-    globalDebugEnabled = 0;
+    globalDebugEnabled = 0; // Disables output to UART in ./utils/uartstdio.c
     while (1) {
         // Turn on LED 1
         ledOut( 1 );
@@ -129,14 +128,6 @@ void taskDemoLED(void *pvParameters) {
         vTaskDelay(1);
         ledOut( 0 );
         vTaskDelay(1000);
-//        vTaskGetRunTimeStats( debugBuffer );
-//        UARTprintf( "\033[2J%s", debugBuffer );
-//        if( xSemaphoreTake( g_spiState[0].semaToReleaseWhenFinished, 30 ) ){
-//            for( i=0 ; i<50*3; i++ ){
-//                g_spiBuffer[0][i] = i;
-//            }
-//            spiSend( 0, 50*3 );
-//        }
     }
 }
 
@@ -179,13 +170,6 @@ int16_t eolSearch( uint8_t *charPointer, uint16_t nChars ){
     return -1;
 }
 
-uint32_t min( uint32_t a, uint32_t b ){
-    if( b < a ){
-        return b;
-    }
-    return a;
-}
-
 typedef enum{
     PARS_MODE_ASCII, PARS_MODE_BIN_LED
 }t_usbParserMode;
@@ -197,14 +181,11 @@ void taskUsbCommandParser( void *pvParameters ) {
     // Read data from USB serial and parse it
     UARTprintf("%22s: %s", "taskUsbCommandParser()", "Started!\n");
     static uint8_t charBuffer[CMD_PARSER_BUF_LEN];
-//    uint32_t minStackSpace;
     uint32_t nCharsRead=0, tempCharsRead=0, remainderSize=0;
     int16_t retVal;
     uint8_t *writePointer = charBuffer;                         // Points to first free place in charBuffer
     uint8_t *readPointer = charBuffer;                          // Points to the next unprocessed character
     uint8_t *spiWritePointer;                                   // Points to first free place in spiBuffer
-  //  spiSend( 0, 3 );
-//    while(1){};
     t_usbParserMode currentMode = PARS_MODE_ASCII;
     while (1) {
         switch( currentMode ){
@@ -237,7 +218,7 @@ void taskUsbCommandParser( void *pvParameters ) {
                     // -----------------------------------------------------------
                     currentMode = PARS_MODE_BIN_LED;
                     //Okay we need to copy the remainder from the charBuffer into the SPI buffer
-                    nCharsRead = min(remainderSize,g_LEDnBytesToCopy);      //How many chars to copy? remainder might contain more commands!
+                    nCharsRead = MIN(remainderSize, g_LEDnBytesToCopy);      //How many chars to copy? remainder might contain more commands!
                     memcpy( g_spiBuffer[ g_LEDChannel ], readPointer, nCharsRead );
                     spiWritePointer= &g_spiBuffer[g_LEDChannel][nCharsRead];//Points to next free char in spiBuffer
                     readPointer += nCharsRead;
@@ -273,7 +254,6 @@ void taskUsbCommandParser( void *pvParameters ) {
                     nCharsRead = 0;
                     remainderSize = 0;
                 }                                       //We still have space!
-//                UARTprintf("%22s: nCharsRead = %d\n", "taskUsbCommandParser()", nCharsRead);
             }
             break;
 
@@ -289,7 +269,7 @@ void taskUsbCommandParser( void *pvParameters ) {
                 nCharsRead += tempCharsRead;
             }
             if( nCharsRead >= g_LEDnBytesToCopy ){      //Are we good already?
-                spiSend( g_LEDChannel, g_LEDnBytesToCopy );
+                spiSend(g_LEDChannel, g_LEDnBytesToCopy);
 //                xSemaphoreGive( g_spiState[g_LEDChannel].semaToReleaseWhenFinished );
                 nCharsRead = 0;
                 currentMode = PARS_MODE_ASCII;
@@ -297,8 +277,9 @@ void taskUsbCommandParser( void *pvParameters ) {
             break;
 
         default:
-            REPORT_ERROR( "ER:000B\n" );
-            UARTprintf("%22s: Unknown currentMode!\n", "taskUsbCommandParser()");
+            REPORT_ERROR("ER:000B\n");
+            UARTprintf("%22s: currentMode unknown, 0x%02x\n", "taskUsbCommandParser()", currentMode);
+            currentMode = PARS_MODE_ASCII;
         }
     }
 }
@@ -350,7 +331,7 @@ int Cmd_IDN(int argc, char *argv[]) {
 }
 
 int Cmd_DISC(int argc, char *argv[]){
-    g_reDiscover = 1;                                      // Flag Rescann all I2C inputs
+    i2cDiscover();
     return(0);
 }
 
@@ -382,7 +363,7 @@ int Cmd_DEB(int argc, char *argv[]) {
         hwIndex = ustrtoul(argv[1], NULL, 0);
         onOff = ustrtoul(argv[2], NULL, 0);     // 1: Debouncing ON
         inputSwitchId = decodeHwIndex( hwIndex, 1 );
-        if ( inputSwitchId.hwIndexType==HW_INDEX_INVALID ) {
+        if (inputSwitchId.hwIndexType == HW_INDEX_INVALID) {
             REPORT_ERROR( "ER:000D\n" );
             UARTprintf( "%22s: inputSwitchId = %s invalid\n", "Cmd_DEB()", argv[1] );
             return 0;

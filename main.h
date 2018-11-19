@@ -22,6 +22,9 @@
 #define DISABLE_SOLENOIDS() ROM_GPIOPinWrite(GPIO_PORTE_BASE, GPIO_PIN_0, 0)
 #define ENABLE_SOLENOIDS()  ROM_GPIOPinWrite(GPIO_PORTE_BASE, GPIO_PIN_0, 1)
 
+#define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
+#define MAX(X,Y) ((X) > (Y) ? (X) : (Y))
+
 void configureTimer();
 void startTimer();
 uint32_t stopTimer();

@@ -128,23 +128,13 @@ void initGpio(){
     // Init switch matrix shift register driving outputs
     ROM_GPIODirModeSet( GPIO_PORTB_BASE, GPIO_PIN_1 | GPIO_PIN_0, GPIO_DIR_MODE_OUT);
     ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_1 | GPIO_PIN_0, GPIO_STRENGTH_12MA, GPIO_PIN_TYPE_OD );
-    // Enable the GPIO pins for the LED (PF2 & PF3).
-    ROM_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2);
+    // Enable the GPIO pins for the LED (green|blue|red).
+    ROM_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2|GPIO_PIN_1);
     // Enable the GPIO pins for the 24V enbale (PE0).
     ROM_GPIOPinTypeGPIOOutput(GPIO_PORTE_BASE, GPIO_PIN_0);
     ROM_GPIODirModeSet( GPIO_PORTE_BASE, GPIO_PIN_0, GPIO_DIR_MODE_OUT );
     ROM_GPIOPadConfigSet( GPIO_PORTE_BASE, GPIO_PIN_0, GPIO_STRENGTH_12MA, GPIO_PIN_TYPE_STD );
     DISABLE_SOLENOIDS();
-
-// Test for PCB short circuits by toggling some pins
-//    ROM_GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_2|GPIO_PIN_3);
-//    while(1){
-//        ROM_GPIOPinWrite( GPIO_PORTB_BASE, GPIO_PIN_2|GPIO_PIN_3, 0xFF );
-//        SysCtlDelay( SYSTEM_CLOCK/3 );
-//        ROM_GPIOPinWrite( GPIO_PORTB_BASE, GPIO_PIN_2|GPIO_PIN_3, 0x00 );
-//        SysCtlDelay( SYSTEM_CLOCK/3 );
-//    }
-
 }
 
 void myPWMGenConfigure(uint32_t ui32Base, uint32_t ui32Gen){
@@ -242,9 +232,9 @@ int main(void) {
 //            I2CMRead(&g_sI2CInst[i], j, &z, 1, NULL, 0, NULL, NULL); //Send 0x00
 //        }
 //    }
-    I2CMRead( &g_sI2CInst[0], 0x20, &z, 1, NULL, 0, NULL, NULL);       //Send 0x00 to on-board PCF8574
+    //Send 0x00 to on-board PCF8574
+    I2CMRead(&g_sI2CInst[0], 0x20, &z, 1, NULL, 0, NULL, NULL);
     spiSetup();         //Init 3 SPI channels for setting ws2811 LEDs
-
     initPWM();          //Init the 4 Hardware PWM output channels
     // Enable lazy stacking for interrupt handlers.  This allows floating-point
     // instructions to be used within interrupt handlers, but at the expense of
@@ -255,7 +245,7 @@ int main(void) {
     // Init USB virtual serial port for communication to the host PC runing MPF
     //-------------------------------------------------------------------------
     // Configure the required pins for USB operation.
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_USB0 );
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_USB0);
     // Initialize the transmit and receive buffers.
     USBBufferInit(&g_sTxBuffer);
     USBBufferInit(&g_sRxBuffer);
@@ -271,15 +261,15 @@ int main(void) {
     // Highest Int priority = (0<<5)    (only upper 3 bits count)
     // Lowest Int priority  = (7<<5)
     //-------------------------------------------------------------------------
-    ROM_IntPrioritySet(INT_USB0, (7<<5) );     //USB = Low priority
-    ROM_IntPrioritySet(INT_I2C0, (6<<5) );     //I2C = Medium priority
-    ROM_IntPrioritySet(INT_I2C1, (6<<5) );
-    ROM_IntPrioritySet(INT_I2C2, (6<<5) );
-    ROM_IntPrioritySet(INT_I2C3, (6<<5) );
-    ROM_IntPrioritySet(INT_UART0,(7<<5) );     //Debug UART = Low priority
-    ROM_IntPrioritySet(INT_SSI1, (5<<5) );     //SPI  = High priority
-    ROM_IntPrioritySet(INT_SSI2, (5<<5) );
-    ROM_IntPrioritySet(INT_SSI3, (5<<5) );
+    ROM_IntPrioritySet(INT_USB0, (6<<5));     //USB = Low priority
+    ROM_IntPrioritySet(INT_I2C0, (5<<5));     //I2C = Medium priority
+    ROM_IntPrioritySet(INT_I2C1, (5<<5));
+    ROM_IntPrioritySet(INT_I2C2, (5<<5));
+    ROM_IntPrioritySet(INT_I2C3, (5<<5));
+    ROM_IntPrioritySet(INT_UART0,(7<<5));     //Debug UART = Lowest priority
+    ROM_IntPrioritySet(INT_SSI1, (4<<5));     //SPI  = High priority
+    ROM_IntPrioritySet(INT_SSI2, (4<<5));
+    ROM_IntPrioritySet(INT_SSI3, (4<<5));
 
     //  All mediocre
 //    ROM_IntPrioritySet(INT_USB0, (6<<5) );
