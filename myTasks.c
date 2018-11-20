@@ -52,7 +52,7 @@
 // Global vars.
 //*****************************************************************************
 // Stuff for synchronizing TI I2C driver with freeRtos `do custom I2C transaction` task
-TaskHandle_t g_customI2cTask = NULL;
+TaskHandle_t hCustomI2cTask = NULL;
 SemaphoreHandle_t g_SemaCustomI2C = NULL;
 uint16_t g_customI2CnBytesRx;
 uint8_t g_customI2CrxBuffer[CUSTOM_I2C_BUF_LEN];
@@ -67,7 +67,8 @@ uint8_t g_errorBuffer[8];
 tCmdLineEntry g_psCmdTable[] = {
         { "?",     Cmd_help, ": Display list of commands" },
         { "*IDN?", Cmd_IDN,  ": Display ID and version info" },
-        { "DISC",  Cmd_DISC, ": Discover PCF8574 GPIO expanders on I2C busses"},
+        { "I2CL",  Cmd_I2CL, ": List detected GPIO expanders on I2C busses"},
+        { "I2CR",  Cmd_I2CR, ": Reset I2C reader / writer (re-discover)"},
         { "SWE",   Cmd_SWE,  ": <OnOff> En./Dis. reporting of switch events" },
         { "DEB",   Cmd_DEB,  ": <hwIndex> <OnOff> En./Dis. 12 ms debouncing" },
         { "SW?",   Cmd_SW,   ": Return the state of ALL switches (40 bytes)" },
@@ -97,7 +98,7 @@ uint16_t strMyStrip(uint8_t *cmdString, uint16_t cmdLen) {
         pos++;
     }
     *pos = '\0';
-    return (i);
+    return i;
 }
 
 void taskDemoLED(void *pvParameters) {
@@ -112,20 +113,11 @@ void taskDemoLED(void *pvParameters) {
     vTaskDelay( 1000 );
     UARTprintf("Press any key to enable debug messages ... ");
     globalDebugEnabled = 0; // Disables output to UART in ./utils/uartstdio.c
+    unsigned i=0;
     while (1) {
         // Turn on LED 1
-        ledOut( 1 );
+        ledOut( i++ );
         vTaskDelay(2);
-        ledOut( 0 );
-        vTaskDelay(1000);
-        // Turn on LED 2
-        ledOut( 2 );
-        vTaskDelay(1);
-        ledOut( 0 );
-        vTaskDelay(1000);
-        // Turn on LED 1+2
-        ledOut( 3 );
-        vTaskDelay(1);
         ledOut( 0 );
         vTaskDelay(1000);
     }
@@ -319,7 +311,7 @@ int Cmd_help(int argc, char *argv[]) {
         }
 #endif
     }
-    return (0);                                                // Return success.
+    return 0;                                                // Return success.
 }
 
 int Cmd_IDN(int argc, char *argv[]) {
@@ -327,12 +319,32 @@ int Cmd_IDN(int argc, char *argv[]) {
     ts_usbSend( (uint8_t*)buff, VERSION_IDN_LEN );
     UARTprintf( VERSION_INFO );
     UARTprintf( "xPortGetFreeHeapSize(): %d\n", xPortGetFreeHeapSize() );
-    return (0);
+    return 0;
 }
 
-int Cmd_DISC(int argc, char *argv[]){
-    i2cDiscover();
-    return(0);
+int Cmd_I2CL(int argc, char *argv[]){
+    UARTprintf("--------------------------\n");
+    UARTprintf(" Ch  Adr  HwI  State\n");
+    UARTprintf("--------------------------\n");
+    for (unsigned ch=0; ch<=3; ch++) {
+        for (unsigned i = 0; i <= PCF_MAX_PER_CHANNEL - 1; i++) {
+            uint8_t s = g_I2CState[ch][i];
+            UARTprintf(
+                " %2x  %02x   %03x  %s\n",
+                ch, 0x20 + i, 0x40 + ch * 0x40 + i * 8, getI2cStateStr(s)
+            );
+        }
+    }
+    UARTprintf("--------------------------\n");
+    return 0;
+}
+
+int Cmd_I2CR(int argc, char *argv[]){
+    UARTprintf("Reseting I2C system ...\n");
+    g_reDiscover = 1;
+    // task might be blocked (no pullups?) ...
+    xTaskNotifyGive(hPcfInReader);
+    return 0;
 }
 
 int Cmd_SW(int argc, char *argv[]) {
@@ -346,12 +358,12 @@ int Cmd_SW(int argc, char *argv[]) {
         if (charsWritten >= REPORT_SWITCH_BUF_SIZE - 1) {
             REPORT_ERROR( "ER:000C\n" );
             UARTprintf("Cmd_SW(): string buffer overflow!\n");
-            return (0);
+            return 0;
         }
     }
     outBuffer[ charsWritten ] = '\n';
     ts_usbSend((uint8_t*) outBuffer, charsWritten+1 );
-    return (0);
+    return 0;
 }
 
 int Cmd_DEB(int argc, char *argv[]) {
@@ -375,7 +387,7 @@ int Cmd_DEB(int argc, char *argv[]) {
             // Set noDebounce Flag
             HWREGBITB( &g_SwitchStateNoDebounce.charValues[inputSwitchId.byteIndex], inputSwitchId.pinIndex ) = 1;
         }
-        return (0);
+        return 0;
     }
     return CMDLINE_TOO_FEW_ARGS;
 }
@@ -426,33 +438,33 @@ int Cmd_OUT(int argc, char *argv[]) {
         }
         UARTprintf("Cmd_OUT(): i2cCh %d, i2cAdr 0x%02x, bit %d = tp %d, pH %d, pL %d\n", outLocation.i2cChannel, outLocation.i2cAddress, outLocation.pinIndex, tPulse, pwmHigh, pwmLow);
         setPCFOutput(outLocation, tPulse, pwmHigh, pwmLow);
-        return(0);
+        return 0;
 
     case HW_INDEX_HWPWM:
         if ( pwmHigh > MAX_PWM || pwmLow > MAX_PWM ) {
             REPORT_ERROR( "ER:000F\n" );
             UARTprintf("Cmd_OUT(): HW PWMvalue must be <= %d\n", MAX_PWM);
-            return(0);
+            return 0;
         }
         UARTprintf("Cmd_OUT(): HW_PWM_CH %d, tp %d, pH %d, pL %d\n", outLocation.pinIndex, tPulse, pwmHigh, pwmLow);
         setPCFOutput(outLocation, tPulse, pwmHigh, pwmLow);
-        return(0);
+        return 0;
 
     case HW_INDEX_SWM:
         REPORT_ERROR( "ER:0010\n" );
         UARTprintf("Cmd_OUT(): HW_INDEX_INVALID: %s\n", argv[1]);
-        return (0);
+        return 0;
 
     case HW_INDEX_INVALID:
         REPORT_ERROR( "ER:0011\n" );
         UARTprintf("Cmd_OUT(): HW_INDEX_INVALID: %s\n", argv[1]);
-        return (0);
+        return 0;
 
     default:
         DISABLE_SOLENOIDS();
         REPORT_ERROR( "ER:0012\n" );
     }
-    return (0);
+    return 0;
 }
 
 int Cmd_SWE(int argc, char *argv[]) {
@@ -465,7 +477,7 @@ int Cmd_SWE(int argc, char *argv[]) {
         } else {
             g_reportSwitchEvents = 0;
         }
-        return (0);
+        return 0;
     }
     return CMDLINE_TOO_FEW_ARGS;
 }
@@ -487,7 +499,7 @@ int Cmd_RULE(int argc, char *argv[]) {
         } else {
             disableQuickRule(id);
         }
-        return (0);
+        return 0;
     }
     return CMDLINE_TOO_FEW_ARGS;
 }
@@ -545,7 +557,7 @@ int Cmd_RUL(int argc, char *argv[]) {
             if ( pwmHigh > MAX_PWM || pwmLow > MAX_PWM ) {
                 REPORT_ERROR( "ER:0017\n" );
                 UARTprintf( "%22s: HW pwmValues must be < %d\n", "Cmd_RUL()", MAX_PWM );
-                return(0);
+                return 0;
             }
             break;
         case HW_INDEX_INVALID:
@@ -557,7 +569,7 @@ int Cmd_RUL(int argc, char *argv[]) {
         UARTprintf("%22s: Setting up autofiring rule %d\n", "Cmd_RUL()", id);
         setupQuickRule( id, inputSwitchId, outputDriverId, triggerHoldOffTime,
                 tPulse, pwmHigh, pwmLow, trigPosEdge );
-        return (0);
+        return 0;
     }
     return CMDLINE_TOO_FEW_ARGS;
 }
@@ -573,7 +585,7 @@ int Cmd_LEC(int argc, char *argv[]) {   //Here we need re - initialize the SPI m
         } else {
             REPORT_ERROR( "ER:0019\n" );
             UARTprintf("%22s: Invalid LED channel (%d)\n", "Cmd_LEC()", channel);
-            return(0);
+            return 0;
         }
         spiSpeed = ustrtoul(argv[2], NULL, 0);
         if( argc == 4 ){
@@ -591,7 +603,7 @@ int Cmd_LEC(int argc, char *argv[]) {   //Here we need re - initialize the SPI m
         return( CMDLINE_TOO_FEW_ARGS );
     }
 
-    return(0);
+    return 0;
 }
 
 
@@ -648,7 +660,6 @@ void taskI2CCustomReporter(void *pvParameters) {
     static uint8_t outBuffer[CUSTOM_I2C_BUF_LEN*2+5];
     uint8_t *writePointer, *readPointer;
     uint16_t i;
-    g_customI2cTask = xTaskGetCurrentTaskHandle();
     g_SemaCustomI2C = xSemaphoreCreateBinary();
     xSemaphoreGive( g_SemaCustomI2C );
     UARTprintf("%22s: %s", "taskI2CustomReporter()", "Started!\n");
@@ -689,7 +700,7 @@ void cmdI2CCallback(void* pvCallbackData, uint_fast8_t ui8Status){
 //   Notify taskI2CCustomReporter task to report results
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     g_customI2Cstate = ui8Status;
-    vTaskNotifyGiveFromISR( g_customI2cTask, &xHigherPriorityTaskWoken );
+    vTaskNotifyGiveFromISR( hCustomI2cTask, &xHigherPriorityTaskWoken );
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 

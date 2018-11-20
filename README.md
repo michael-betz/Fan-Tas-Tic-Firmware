@@ -31,7 +31,7 @@ Reading an empty address will give a NO_ACK read error, which is silently ignore
 
 
 ## Debouncing
-The taskDebouncer() is running at 333 Hz, reading all switches (matrix and I2C) into an array
+The taskPcfInReader() is running at 333 Hz, reading all switches (matrix and I2C) into an array
  * Switch Matrix (SM) is read in foreground while I2C transactions happen in background (TI I2Cm driver)
  * When both reads are finished, the Debouncing routine is called
  * If a changed input bit was detected, it increments a 2 bit [vertical counter](http://www.compuphase.com/electronics/debouncing.htm).
@@ -80,6 +80,37 @@ The mainboard features 4 high resolution PWM solenoid drivers running at 50 kHz.
 For these, the pwm hold power and pwm pulse power can be specified from 0 - 1500.
 The hwIndexes 0x3C - 0x3F are mapped in any `OUT` command to the HW. PWM channels.
 For any `IN` command, these addresses are mapped to the highest 4 Switch Matrix inputs.
+
+# Building
+Instructions for Ubuntu 18
+
+### Install gcc for arm
+```bash
+$ sudo apt-get install gcc-arm-none-eabi openocd build-essential make
+# to get miniterm.py
+$ pip install pyserial
+```
+
+### Download TivaWare Full Release
+From here: [SW-TM4C-2.1.4.178.exe](http://www.ti.com/tool/SW-TM4C)
+It's free but registration at ti.com is necessary.
+
+```bash
+$ echo "c74ef1da07246d4ad20a92521ba44a7d567f6bc62556cd1b76e7fd6a8a75bf8c  SW-TM4C-2.1.4.178.exe" | sha256sum -c -
+SW-TM4C-2.1.4.178.exe: OK
+
+$ unzip SW-TM4C-2.1.4.178.exe
+```
+
+### Build and flash the project
+Now edit `Makefile` and change the path `ROOT = ` to the tivaware folder from above.
+
+Plug in the debug connector and:
+```bash
+$ make
+$ make flash
+$ miniterm.py /dev/ttyACM0 115200
+```
 
 # Serial command API
 The Tiva board has two physical USB connectors. The `DEBUG` port is used to load and debug the firmware.

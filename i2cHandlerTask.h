@@ -16,8 +16,10 @@
 #define PCF_MAX_PER_CHANNEL 8
 // Lowest possible I2C Address of a PCF8574 IO extender (all address pins low)
 #define PCF_LOWEST_ADDR 0x20
-// Flag for g_I2CState: skip this PCF chip
-#define I2CM_STATUS_DISABLED  42
+// g_I2CState: low nibble = status of last i2c read
+// if high nibble is != 0, the channel is disabled
+#define I2CM_STATUS_UNKNOWN   7
+#define I2CM_STATUS_BLOCKED   8
 // Read all PCF inputs and process quickRules every xxx ms
 #define DEBOUNCER_READ_PERIOD 3
 // How many uint32_t values to express all the input states
@@ -101,7 +103,6 @@ typedef struct {
     int8_t i2cChannel;
     uint8_t i2cAddress;
     uint8_t bcmBuffer[N_BIT_PWM];   // To do binary code modulation, these 4 bytes will be written in sequence to the PCF
-    uint8_t lastState;              // Last I2CM state
     t_BitModifyRules bitRules[8];   // Hold the state of each output pin
 } t_PCLOutputByte;
 
@@ -110,6 +111,8 @@ typedef struct {
 //*****************************************************************************
 // The I2C master driver instances (TI driver)
 extern tI2CMInstance g_sI2CInst[4];
+extern uint8_t g_I2CState[4][PCF_MAX_PER_CHANNEL];      //Status of last transmission
+extern TaskHandle_t hPcfInReader;                  //Task handle for restarting
 
 // Buffer bits of current I2C GPIO input state
 extern t_switchStateConverter g_SwitchStateSampled;	    //Read values of last I2C scan
@@ -118,19 +121,20 @@ extern t_switchStateConverter g_SwitchStateToggled;		//Bits which changed
 extern t_switchStateConverter g_SwitchStateNoDebounce;  //Debouncing-OFF flags
 extern t_quickRule g_QuickRuleList[MAX_QUICK_RULES];	//List of Quickrules
 
-extern bool g_reDiscover;                            // Flag Rescann all I2C inputs
+extern bool g_reDiscover;                               //Flag Rescann all I2C inputs
 
 //*****************************************************************************
 // Global functions
 //*****************************************************************************
+const char *getI2cStateStr(uint8_t state);
 void initMyI2C();
 void ts_i2cTransfer(uint8_t channel, uint_fast8_t ui8Addr,
         const uint8_t *pui8WriteData, uint_fast16_t ui16WriteCount,
         uint8_t *pui8ReadData, uint_fast16_t ui16ReadCount,
         tSensorCallback *pfnCallback, void *pvCallbackData);
-void i2cDiscover();
+void i2cResetState();
 void i2cStartPCFL8574refresh();
-void taskDebouncer(void *pvParameters);
+void taskPcfInReader(void *pvParameters);
 
 void setupQuickRule(uint8_t id, t_outputBit inputSwitchId,
         t_outputBit outputDriverId, uint16_t triggerHoldOffTime,

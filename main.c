@@ -218,7 +218,7 @@ int main(void) {
     uint8_t z=0; //i=0, j=0;
     // Set the clocking to run at 80 MHz from the PLL.
     ROM_SysCtlClockSet( SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN );
-    initGpio();         // Init GPIO pins
+    initGpio();         //Init GPIO pins
     configureTimer();   //Init debugh HW timer for measuring processor cycles (%timeit)
     initMyI2C();        //Init the 4 I2C hardware channels
     //  -------------------------------------------------------
@@ -233,7 +233,7 @@ int main(void) {
 //        }
 //    }
     //Send 0x00 to on-board PCF8574
-    I2CMRead(&g_sI2CInst[0], 0x20, &z, 1, NULL, 0, NULL, NULL);
+    ts_i2cTransfer(0, 0x20, &z, 1, NULL, 0, NULL, NULL);
     spiSetup();         //Init 3 SPI channels for setting ws2811 LEDs
     initPWM();          //Init the 4 Hardware PWM output channels
     // Enable lazy stacking for interrupt handlers.  This allows floating-point
@@ -271,17 +271,6 @@ int main(void) {
     ROM_IntPrioritySet(INT_SSI2, (4<<5));
     ROM_IntPrioritySet(INT_SSI3, (4<<5));
 
-    //  All mediocre
-//    ROM_IntPrioritySet(INT_USB0, (6<<5) );
-//    ROM_IntPrioritySet(INT_I2C0, (6<<5) );
-//    ROM_IntPrioritySet(INT_I2C1, (6<<5) );
-//    ROM_IntPrioritySet(INT_I2C2, (6<<5) );
-//    ROM_IntPrioritySet(INT_I2C3, (6<<5) );
-//    ROM_IntPrioritySet(INT_UART0,(6<<5) );
-//    ROM_IntPrioritySet(INT_SSI1, (6<<5) );
-//    ROM_IntPrioritySet(INT_SSI2, (6<<5) );
-//    ROM_IntPrioritySet(INT_SSI3, (6<<5) );
-
     //-------------------------------------------------------------------------
     // Startup the FreeRTOS scheduler
     //-------------------------------------------------------------------------
@@ -289,16 +278,16 @@ int main(void) {
     xTaskCreate(taskDemoLED, (const portCHAR *)"LEDr", 64, NULL, 1, NULL);
 
     // Report result of custom I2C transaction to commandline
-    xTaskCreate(taskI2CCustomReporter, (const portCHAR *)"I2CcusRep", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(taskI2CCustomReporter, (const portCHAR *)"I2CcusRep", configMINIMAL_STACK_SIZE, NULL, 1, &hCustomI2cTask);
 
     // Create USB command parser task
     xTaskCreate(taskUsbCommandParser, (const portCHAR *)"Parser", 256, NULL, 1, &hUSBCommandParser);
 
     // Create I2C / Matrix debouncer
-    xTaskCreate(taskDebouncer, (const portCHAR *)"Debouncer", 256, NULL, 0, NULL);
+    xTaskCreate(taskPcfInReader, (const portCHAR *)"PCFreader", 256, NULL, 0, &hPcfInReader);
 
     // Dispatch I2C write commands to PCL GPIO extenders every 1 ms
-    xTaskCreate(taskPCFOutWriter, (const portCHAR *)"PCLwriter", 128, NULL, 1, NULL);
+    xTaskCreate(taskPCFOutWriter, (const portCHAR *)"PCFwriter", 128, NULL, 1, NULL);
 
     vTaskStartScheduler();  // This should never return!
     return 0;
