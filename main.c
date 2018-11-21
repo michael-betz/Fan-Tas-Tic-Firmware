@@ -274,16 +274,16 @@ int main(void) {
     // Startup the FreeRTOS scheduler
     //-------------------------------------------------------------------------
     // Create demo tasks
-    xTaskCreate(taskDemoLED, (const portCHAR *)"LEDr", 64, NULL, 1, NULL);
+    xTaskCreate(taskDemoLED, (const portCHAR *)"LEDr", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
     // Report result of custom I2C transaction to commandline
-    xTaskCreate(taskI2CCustomReporter, (const portCHAR *)"I2CcusRep", configMINIMAL_STACK_SIZE, NULL, 1, &hCustomI2cTask);
+    // xTaskCreate(taskI2CCustomReporter, (const portCHAR *)"I2CcusRep", configMINIMAL_STACK_SIZE, NULL, 1, &hCustomI2cTask);
 
     // Create USB command parser task
-    xTaskCreate(taskUsbCommandParser, (const portCHAR *)"Parser", 256, NULL, 1, &hUSBCommandParser);
+    xTaskCreate(taskUsbCommandParser, (const portCHAR *)"Parser", 128, NULL, 1, &hUSBCommandParser);
 
     // Create I2C / Matrix debouncer
-    xTaskCreate(taskPcfInReader, (const portCHAR *)"PCFreader", 256, NULL, 0, &hPcfInReader);
+    xTaskCreate(taskPcfInReader, (const portCHAR *)"PCFreader", 128, NULL, 0, &hPcfInReader);
 
     // Dispatch I2C write commands to PCL GPIO extenders every 1 ms
     xTaskCreate(taskPCFOutWriter, (const portCHAR *)"PCFwriter", 128, NULL, 1, NULL);

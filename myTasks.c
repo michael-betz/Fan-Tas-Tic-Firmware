@@ -67,8 +67,8 @@ uint8_t g_errorBuffer[8];
 tCmdLineEntry g_psCmdTable[] = {
         { "?",     Cmd_help, ": Display list of commands" },
         { "*IDN?", Cmd_IDN,  ": Display ID and version info" },
-        { "I2CL",  Cmd_I2CL, ": List detected GPIO expanders on I2C busses"},
-        { "I2CR",  Cmd_I2CR, ": Reset I2C reader / writer (re-discover)"},
+        { "IL",    Cmd_IL,   ": I2C: List detected GPIO expanders"},
+        { "IR",    Cmd_IR,   ": I2C: Re-discover devices"},
         { "SWE",   Cmd_SWE,  ": <OnOff> En./Dis. reporting of switch events" },
         { "DEB",   Cmd_DEB,  ": <hwIndex> <OnOff> En./Dis. 12 ms debouncing" },
         { "SW?",   Cmd_SW,   ": Return the state of ALL switches (40 bytes)" },
@@ -322,7 +322,7 @@ int Cmd_IDN(int argc, char *argv[]) {
     return 0;
 }
 
-int Cmd_I2CL(int argc, char *argv[]){
+int Cmd_IL(int argc, char *argv[]){
     UARTprintf("--------------------------\n");
     UARTprintf(" Ch  Adr  HwI  State\n");
     UARTprintf("--------------------------\n");
@@ -330,8 +330,8 @@ int Cmd_I2CL(int argc, char *argv[]){
         for (unsigned i = 0; i <= PCF_MAX_PER_CHANNEL - 1; i++) {
             unsigned s = g_I2CState[ch][i];
             UARTprintf(
-                " %2x  %02x   %03x  %x\n",
-                ch, 0x20 + i, 0x40 + ch * 0x40 + i * 8, s//getI2cStateStr(s)
+                " %2x  %02x   %03x  %x %s\n",
+                ch, 0x20 + i, 0x40 + ch * 0x40 + i * 8, s, getI2cStateStr(s)
             );
         }
     }
@@ -339,7 +339,7 @@ int Cmd_I2CL(int argc, char *argv[]){
     return 0;
 }
 
-int Cmd_I2CR(int argc, char *argv[]){
+int Cmd_IR(int argc, char *argv[]){
     UARTprintf("Reseting I2C system ...\n");
     g_reDiscover = 1;
     // task might be blocked (no pullups?) ...

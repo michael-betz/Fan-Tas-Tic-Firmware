@@ -1,11 +1,10 @@
 # VERBOSE = 1
-# DEBUG = 1
+DEBUG = 1
 TARGET = fantastic
 PART = TM4C123GH6PM
 ROOT = /home/michael/ti/tivaware
 GIT_VERSION = $(shell git describe --abbrev=4 --dirty --always --tags)
 include ${ROOT}/makedefs
-
 LIBC = /usr/lib/arm-none-eabi/newlib/armv7e-m/fpu/fpv5-d16/libc.a
 
 #--------------------------------
@@ -44,6 +43,10 @@ IPATH      += $(ROOT)/third_party/FreeRTOS/Source/portable/GCC/ARM_CM4F
 #--------------------------------
 CFLAGS 	   += -DGIT_VERSION=\"$(GIT_VERSION)\"
 CFLAGS 	   += -DTARGET_IS_TM4C123_RB1 -DUART_BUFFERED
+ifndef $(DEBUG)
+	CFLAGS += -O3
+endif
+LDFLAGS    += --print-memory-usage
 SCATTERgcc_$(TARGET) = $(TARGET).ld
 ENTRY_$(TARGET) = ResetISR
 

@@ -309,9 +309,9 @@ void i2cReadDone(void* pvCallbackData, uint_fast8_t ui8Status) {
 void i2cStartPCFL8574refresh() {
     // Make sure `I2C-DONE` cannot be triggered before all jobs are added
     xSemaphoreGive(g_pcfReadsInProgress);
-    for (unsigned nPcf = 0; nPcf <= 5; nPcf++) {
-        // for (nChannel = 0; nChannel <= 3; nChannel++) {
-            unsigned nChannel = 1;
+    for (unsigned nPcf = 0; nPcf < PCF_MAX_PER_CHANNEL; nPcf++) {
+        for (unsigned nChannel = 0; nChannel <= 3; nChannel++) {
+            // unsigned nChannel = 1;
             unsigned previousState = g_I2CState[nChannel][nPcf];
             if(previousState == I2CM_STATUS_SUCCESS ||
                previousState == I2CM_STATUS_UNKNOWN){
@@ -331,7 +331,7 @@ void i2cStartPCFL8574refresh() {
                     &g_I2CState[nChannel][nPcf]
                 );
             }
-        // }
+        }
     }
     // Only after this, `I2C-DONE` can be triggered from the callback
     xSemaphoreTake(g_pcfReadsInProgress, 1);
