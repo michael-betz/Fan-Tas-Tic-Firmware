@@ -328,10 +328,10 @@ int Cmd_I2CL(int argc, char *argv[]){
     UARTprintf("--------------------------\n");
     for (unsigned ch=0; ch<=3; ch++) {
         for (unsigned i = 0; i <= PCF_MAX_PER_CHANNEL - 1; i++) {
-            uint8_t s = g_I2CState[ch][i];
+            unsigned s = g_I2CState[ch][i];
             UARTprintf(
-                " %2x  %02x   %03x  %s\n",
-                ch, 0x20 + i, 0x40 + ch * 0x40 + i * 8, getI2cStateStr(s)
+                " %2x  %02x   %03x  %x\n",
+                ch, 0x20 + i, 0x40 + ch * 0x40 + i * 8, s//getI2cStateStr(s)
             );
         }
     }

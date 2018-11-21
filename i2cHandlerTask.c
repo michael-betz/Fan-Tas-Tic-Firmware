@@ -38,7 +38,8 @@
 tI2CMInstance g_sI2CInst[4];                         //Four TI I2C driver instances for 4 I2C channels
 
 // I2C driver streams input state data into the below arrays
-uint8_t g_I2CState[4][PCF_MAX_PER_CHANNEL];          //Status of last transmission
+unsigned g_I2CState[4][PCF_MAX_PER_CHANNEL];         //Status of last transmission
+
 t_switchStateConverter g_SwitchStateSampled;         //Read values of last I2C scan
 t_switchStateConverter g_SwitchStateDebounced;       //Debounced values (the same after 4 reads)
 t_switchStateConverter g_SwitchStateToggled;         //Bits which changed
@@ -72,7 +73,7 @@ void i2CIntHandler3(void) {
 }
 
 // prints g_I2CState in human readable form
-const char *getI2cStateStr(uint8_t state){
+const char *getI2cStateStr(unsigned state){
     state &= 0x0F;
     static const char *i2cStates[] = {
         "OK",
@@ -95,15 +96,15 @@ void i2cUnstucker(uint32_t base, uint8_t pin_SCL, uint8_t pin_SDA){
     // Unstuck I2C SDA lines
     //--------------------------
     ROM_GPIOPinTypeGPIOOutputOD( base, pin_SCL | pin_SDA );
-    ROM_GPIOPinWrite( base, pin_SDA, 0xFF );
+    ROM_GPIOPinWrite(base, pin_SDA, 0xFF);
     for (unsigned i=0; i<16; i++){
-        ROM_GPIOPinWrite( base, pin_SCL, 0x00 );
-        ROM_SysCtlDelay(SYSTEM_CLOCK / 10000 / 3 * 2); // 0.2 ms
-        ROM_GPIOPinWrite( base, pin_SCL, 0xFF );
-        ROM_SysCtlDelay(SYSTEM_CLOCK / 10000 / 3 * 2);
+        ROM_GPIOPinWrite(base, pin_SCL, 0x00);
+        ROM_SysCtlDelay(100);   // ~ 4 us @ 80 MHz
+        ROM_GPIOPinWrite(base, pin_SCL, 0xFF);
+        ROM_SysCtlDelay(100);
     }
     GPIOPinTypeGPIOInput(base, pin_SDA | pin_SCL);
-    ROM_SysCtlDelay(SYSTEM_CLOCK / 10000 / 3 * 2);
+    ROM_SysCtlDelay(100);
     unsigned rVal = GPIOPinRead(base, pin_SDA | pin_SCL);
     rVal = ~rVal & (pin_SDA | pin_SCL);
     if(rVal){
@@ -203,7 +204,7 @@ void ts_i2cTransfer(uint8_t channel, uint_fast8_t ui8Addr,
         pvCallbackData
     );
     taskEXIT_CRITICAL();
-    if( !retVal ){
+    if(!retVal){
         DISABLE_SOLENOIDS();
         REPORT_ERROR( "ER:0000\n" );
         UARTprintf("%22s: I2CMCommand not added to queue\n", "ts_i2cTransfer()");
@@ -292,12 +293,11 @@ void readSwitchMatrix() {
 void i2cReadDone(void* pvCallbackData, uint_fast8_t ui8Status) {
     // pvCallbackData = pointer to a place in a global array, where the
     // status of the current transaction can be stored
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    *(uint8_t*)pvCallbackData = ui8Status;
+    // UARTprintf("%p %x\n", pvCallbackData, ui8Status);
+    *(unsigned*)pvCallbackData = ui8Status;
     xSemaphoreTakeFromISR(g_pcfReadsInProgress, NULL);     //Decrement `jobs in progress` counter
-    if ( xQueueIsQueueEmptyFromISR(g_pcfReadsInProgress) ) { //We're done with all jobs
-        vTaskNotifyGiveFromISR(hPcfInReader, &xHigherPriorityTaskWoken);
-        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    if (xQueueIsQueueEmptyFromISR(g_pcfReadsInProgress)) { //We're done with all jobs
+        vTaskNotifyGiveFromISR(hPcfInReader, NULL);
     }
 }
 
@@ -308,23 +308,19 @@ void i2cReadDone(void* pvCallbackData, uint_fast8_t ui8Status) {
 // Only the inputs are read which have not previously reported an I2C error
 // e.g., the ones which are actually connected!
 void i2cStartPCFL8574refresh() {
-    uint8_t nPcf, nChannel, previousState;//, queueSize;
     // Make sure `I2C-DONE` cannot be triggered before all jobs are added
     xSemaphoreGive(g_pcfReadsInProgress);
-    for (nPcf = 0; nPcf < PCF_MAX_PER_CHANNEL; nPcf++) {
-        for (nChannel = 0; nChannel <= 3; nChannel++) {
-            previousState = g_I2CState[nChannel][nPcf];
-            if(previousState >> 4 != 0){
-                // PCF is disabled
-                // Can only be re-activated by `I2CR` command
-                continue;
-            }
-            previousState &= 0x0F;
-            if(previousState == I2CM_STATUS_SUCCESS || previousState == I2CM_STATUS_UNKNOWN){
+    for (unsigned nPcf = 0; nPcf <= 5; nPcf++) {
+        // for (nChannel = 0; nChannel <= 3; nChannel++) {
+            unsigned nChannel = 1;
+            unsigned previousState = g_I2CState[nChannel][nPcf];
+            if(previousState == I2CM_STATUS_SUCCESS ||
+               previousState == I2CM_STATUS_UNKNOWN){
                 // Do a i2c read, increment reads in progress counter
                 xSemaphoreGive(g_pcfReadsInProgress);
-                if(previousState == I2CM_STATUS_UNKNOWN)
+                if(previousState == I2CM_STATUS_UNKNOWN) {
                     g_I2CState[nChannel][nPcf] = I2CM_STATUS_BLOCKED;
+                }
                 ts_i2cTransfer(
                     nChannel,
                     PCF_LOWEST_ADDR + nPcf,
@@ -335,28 +331,14 @@ void i2cStartPCFL8574refresh() {
                     i2cReadDone,
                     &g_I2CState[nChannel][nPcf]
                 );
-                continue;
             }
-            // I2C error, disable the channel
-            DISABLE_SOLENOIDS();
-            // UARTprintf(
-            //     "%22s: I2C read failed! Ch %x, Adr %x, Err %x\n",
-            //     "i2cStartPCFL8574refresh()",
-            //     nChannel,
-            //     0x20 + nPcf,
-            //     previousState
-            // );
-            REPORT_ERROR("ER:0001\n");
-            // Disable the channel
-            g_I2CState[nChannel][nPcf] |= 0x10;
-        }
+        // }
     }
     // Only after this, `I2C-DONE` can be triggered from the callback
     xSemaphoreTake(g_pcfReadsInProgress, 1);
     // In case the I2C callback was fired already, manually check if I2C is done here
     if (uxQueueMessagesWaiting(g_pcfReadsInProgress) == 0) { //done with all reads
-        configASSERT(hPcfInReader != NULL);
-        vTaskNotifyGiveFromISR(hPcfInReader, NULL);
+        xTaskNotifyGive(hPcfInReader);
     }
 }
 

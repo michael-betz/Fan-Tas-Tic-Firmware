@@ -220,7 +220,7 @@ int main(void) {
     ROM_SysCtlClockSet( SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN );
     initGpio();         //Init GPIO pins
     configureTimer();   //Init debugh HW timer for measuring processor cycles (%timeit)
-    initMyI2C();        //Init the 4 I2C hardware channels
+    // initMyI2C();        //Init the 4 I2C hardware channels
     //  -------------------------------------------------------
     //   Init all PCFs to output low
     //   This is to protect any Relais conected to PCF outputs
@@ -233,7 +233,7 @@ int main(void) {
 //        }
 //    }
     //Send 0x00 to on-board PCF8574
-    ts_i2cTransfer(0, 0x20, &z, 1, NULL, 0, NULL, NULL);
+    // ts_i2cTransfer(0, 0x20, &z, 1, NULL, 0, NULL, NULL);
     spiSetup();         //Init 3 SPI channels for setting ws2811 LEDs
     initPWM();          //Init the 4 Hardware PWM output channels
     // Enable lazy stacking for interrupt handlers.  This allows floating-point

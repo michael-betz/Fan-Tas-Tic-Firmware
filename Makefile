@@ -1,4 +1,5 @@
 # VERBOSE = 1
+# DEBUG = 1
 TARGET = fantastic
 PART = TM4C123GH6PM
 ROOT = /home/michael/ti/tivaware

@@ -111,7 +111,9 @@ typedef struct {
 //*****************************************************************************
 // The I2C master driver instances (TI driver)
 extern tI2CMInstance g_sI2CInst[4];
-extern uint8_t g_I2CState[4][PCF_MAX_PER_CHANNEL];      //Status of last transmission
+extern unsigned g_I2CState[4][PCF_MAX_PER_CHANNEL];      //Status of last transmission
+// bit 3 ... 0 = status code
+
 extern TaskHandle_t hPcfInReader;                  //Task handle for restarting
 
 // Buffer bits of current I2C GPIO input state
@@ -126,7 +128,7 @@ extern bool g_reDiscover;                               //Flag Rescann all I2C i
 //*****************************************************************************
 // Global functions
 //*****************************************************************************
-const char *getI2cStateStr(uint8_t state);
+const char *getI2cStateStr(unsigned state);
 void initMyI2C();
 void ts_i2cTransfer(uint8_t channel, uint_fast8_t ui8Addr,
         const uint8_t *pui8WriteData, uint_fast16_t ui16WriteCount,
