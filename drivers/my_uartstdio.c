@@ -20,6 +20,7 @@
 //
 // This is part of revision 2.1.1.71 of the Tiva Utility Library.
 //
+// Modified by M. Betz on 21.11.2018 to include the `globalDebugEnabled` flag
 //*****************************************************************************
 
 #include <stdbool.h>

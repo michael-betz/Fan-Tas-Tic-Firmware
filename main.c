@@ -16,10 +16,8 @@
 #include "inc/hw_ints.h"
 #include "inc/hw_pwm.h"
 
-#include "utils/i2cm_drv.h"
-#include "utils/uartstdio.h"
-
 // TivaWare includes
+#include "sensorlib/i2cm_drv.h"
 #include "driverlib/rom.h"
 #include "driverlib/timer.h"
 #include "driverlib/pwm.h"
@@ -29,6 +27,7 @@
 #include "driverlib/debug.h"
 #include "driverlib/rom.h"
 #include "driverlib/interrupt.h"
+#include "my_uartstdio.h"
 
 // FreeRTOS includes
 #include "FreeRTOSConfig.h"
@@ -215,7 +214,7 @@ void setPwm( uint8_t channel, uint16_t pwmValue ){
 // Main function
 //-------------------------------------------------------------------------
 int main(void) {
-    uint8_t z=0; //i=0, j=0;
+    // uint8_t z=0; //i=0, j=0;
     // Set the clocking to run at 80 MHz from the PLL.
     ROM_SysCtlClockSet( SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN );
     initGpio();         //Init GPIO pins

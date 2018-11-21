@@ -24,6 +24,7 @@
 #include "semphr.h"
 
 // TivaWare includes
+#include "sensorlib/i2cm_drv.h"
 #include "driverlib/i2c.h"
 #include "driverlib/ssi.h"
 #include "driverlib/pin_map.h"
@@ -32,10 +33,9 @@
 #include "driverlib/interrupt.h"
 #include "driverlib/rom.h"
 #include "driverlib/sysctl.h"
-#include "utils/i2cm_drv.h"
 #include "utils/ustdlib.h"
-#include "utils/uartstdio.h"
 #include "utils/cmdline.h"
+#include "my_uartstdio.h"
 
 // USB stuff
 #include "usblib/usblib.h"
@@ -127,7 +127,7 @@ int8_t cmdParse( uint8_t *charBuffer, uint16_t nCharsRead ){
     if (nCharsRead == 0){   //This must be a \n, ignore silently
         return( 0 );
     }
-    int8_t retVal = CmdLineProcess( (char*)charBuffer, nCharsRead );
+    int8_t retVal = CmdLineProcess((char*)charBuffer); //, nCharsRead );
     switch (retVal) {
      case CMDLINE_BAD_CMD:
          REPORT_ERROR( "ER:0006\n" );

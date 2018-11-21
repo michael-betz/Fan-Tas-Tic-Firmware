@@ -35,10 +35,9 @@
 #include "driverlib/interrupt.h"
 #include "driverlib/rom.h"
 #include "driverlib/sysctl.h"
-#include "utils/i2cm_drv.h"
 #include "utils/ustdlib.h"
-#include "utils/uartstdio.h"
 #include "utils/cmdline.h"
+#include "my_uartstdio.h"
 //*****************************************************************************
 // USB stuff
 //*****************************************************************************

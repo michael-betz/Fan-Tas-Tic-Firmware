@@ -11,7 +11,6 @@
 #include "inc/hw_types.h"
 #include "inc/hw_timer.h"
 #include "inc/hw_ints.h"
-#include "utils/i2cm_drv.h"
 // FreeRTOS includes
 #include "FreeRTOSConfig.h"
 #include "FreeRTOS.h"
@@ -24,9 +23,9 @@
 #include "driverlib/sysctl.h"
 #include "driverlib/rom.h"
 #include "driverlib/timer.h"
-#include "utils/uartstdio.h"
 #include "utils/ustdlib.h"
-#include "utils/i2cm_drv.h"
+#include "sensorlib/i2cm_drv.h"
+#include "my_uartstdio.h"
 // My stuff
 #include "main.h"
 #include "myTasks.h"

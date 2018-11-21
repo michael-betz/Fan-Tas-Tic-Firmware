@@ -7,6 +7,7 @@
 
 #ifndef I2CHANDLERTASK_H_
 #define I2CHANDLERTASK_H_
+#include "sensorlib/i2cm_drv.h"
 
 //*****************************************************************************
 // Defines
