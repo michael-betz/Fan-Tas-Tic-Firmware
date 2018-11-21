@@ -90,31 +90,64 @@ const char *getI2cStateStr(uint8_t state){
     return i2cStates[state];
 }
 
+void i2cUnstucker(uint32_t base, uint8_t pin_SCL, uint8_t pin_SDA){
+    //--------------------------
+    // Unstuck I2C SDA lines
+    //--------------------------
+    ROM_GPIOPinTypeGPIOOutputOD( base, pin_SCL | pin_SDA );
+    ROM_GPIOPinWrite( base, pin_SDA, 0xFF );
+    for (unsigned i=0; i<16; i++){
+        ROM_GPIOPinWrite( base, pin_SCL, 0x00 );
+        ROM_SysCtlDelay(SYSTEM_CLOCK / 10000 / 3 * 2); // 0.2 ms
+        ROM_GPIOPinWrite( base, pin_SCL, 0xFF );
+        ROM_SysCtlDelay(SYSTEM_CLOCK / 10000 / 3 * 2);
+    }
+    GPIOPinTypeGPIOInput(base, pin_SDA | pin_SCL);
+    ROM_SysCtlDelay(SYSTEM_CLOCK / 10000 / 3 * 2);
+    unsigned rVal = GPIOPinRead(base, pin_SDA | pin_SCL);
+    rVal = ~rVal & (pin_SDA | pin_SCL);
+    if(rVal){
+        UARTprintf("i2cUnstucker()        : pin stuck low at %6x: ", base);
+        if(rVal & pin_SCL)
+            UARTprintf("SCL ");
+        if(rVal & pin_SDA)
+            UARTprintf("SDA ");
+        UARTprintf("\n");
+    }
+}
+
 void initMyI2C() {
-    uint8_t i;
+    unsigned i;
     for (i = 0; i < N_LONGS; i++) {
         g_SwitchStateDebounced.longValues[i] = 0;
         g_SwitchStateSampled.longValues[i] = 0;
         g_SwitchStateToggled.longValues[i] = 0;
     }
-    // ***********************************************
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOB );   //I2C0
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOA );   //I2C1
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOE );   //I2C2
+    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOD );   //I2C3
+
+    //--------------------------
+    // Unstuck I2C SDA lines
+    //--------------------------
+    i2cUnstucker(GPIO_PORTB_BASE, GPIO_PIN_2, GPIO_PIN_3);
+    i2cUnstucker(GPIO_PORTA_BASE, GPIO_PIN_6, GPIO_PIN_7);
+    i2cUnstucker(GPIO_PORTE_BASE, GPIO_PIN_4, GPIO_PIN_5);
+    i2cUnstucker(GPIO_PORTD_BASE, GPIO_PIN_0, GPIO_PIN_1);
+
+    //--------------------------
     //  Set up the i2c masters
-    // ***********************************************
+    //--------------------------
     // The I2C7 peripheral must be enabled before use.
     ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_I2C0 );
     ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_I2C1 );
     ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_I2C2 );
     ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_I2C3 );
-
     ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C0 );
     ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C1 );
     ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C2 );
     ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C3 );
-
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOB );   //I2C0
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOA );   //I2C1
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOE );   //I2C2
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOD );   //I2C3
 
     // Configure the pin muxing for I2C0 functions on port D0 and D1.
     // This step is not necessary if your part does not support pin muxing.

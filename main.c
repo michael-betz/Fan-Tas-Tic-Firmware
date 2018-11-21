@@ -229,7 +229,7 @@ int main(void) {
     //  -------------------------------------------------------
 //    for (i=0; i<=3; i++) {            // For each I2C channel
 //        for (j=0x20; j<=0x27; j++) {  // For each PCFL I2C addr.
-//            I2CMRead(&g_sI2CInst[i], j, &z, 1, NULL, 0, NULL, NULL); //Send 0x00
+//            ts_i2cTransfer(i, j, &z, 1, NULL, 0, NULL, NULL); //Send 0x00
 //        }
 //    }
     //Send 0x00 to on-board PCF8574
