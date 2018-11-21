@@ -107,7 +107,7 @@ void i2cUnstucker(uint32_t base, uint8_t pin_SCL, uint8_t pin_SDA){
     unsigned rVal = GPIOPinRead(base, pin_SDA | pin_SCL);
     rVal = ~rVal & (pin_SDA | pin_SCL);
     if(rVal){
-        UARTprintf("i2cUnstucker()        : pin stuck low at %6x: ", base);
+        UARTprintf("i2cUnstucker()        : pin stuck low @%x: ", base);
         if(rVal & pin_SCL)
             UARTprintf("SCL ");
         if(rVal & pin_SDA)
@@ -250,25 +250,30 @@ void resetSMrow() {
         ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, 0);
         ROM_SysCtlDelay( SM_COL_DELAY_CNT);
     }
-    //Switch on first bit
-    ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, SM_COL_DAT);//Shift register data input = high
+    //Switch on first bit. Shift register data input = high
+    ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, SM_COL_DAT);
     ROM_SysCtlDelay( SM_COL_DELAY_CNT);
-    ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT,
-    SM_COL_CLK | SM_COL_DAT);        //Shift register clock = pos. edge
+    //Shift register clock = pos. edge
+    ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, SM_COL_CLK | SM_COL_DAT);
     ROM_SysCtlDelay( SM_COL_DELAY_CNT);
     ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, 0);
     ROM_SysCtlDelay( SM_COL_DELAY_CNT);
-    ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, SM_COL_DAT);//Latch clock = pos. edge
+    //Latch clock = pos. edge
+    ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, SM_COL_DAT);
     ROM_SysCtlDelay( SM_COL_DELAY_CNT);
     ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, 0);
     ROM_SysCtlDelay( SM_COL_DELAY_CNT);
 }
+
 void advanceSMrow() {
-    ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, SM_COL_CLK);//Shift register clock = pos. edge
+    //Shift register clock = pos. edge
+    ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, SM_COL_CLK);
     ROM_SysCtlDelay( SM_COL_DELAY_CNT);
-    ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, 0);         //Shift register data input = low
+    //Shift register data input = low
+    ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, 0);
     ROM_SysCtlDelay( SM_COL_DELAY_CNT);
-    ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, SM_COL_DAT);//Latch clock = pos. edge
+    //Latch clock = pos. edge
+    ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, SM_COL_DAT);
     ROM_SysCtlDelay( SM_COL_DELAY_CNT);
     ROM_GPIOPinWrite( GPIO_PORTB_BASE, SM_COL_CLK | SM_COL_DAT, 0);
     ROM_SysCtlDelay( SM_COL_DELAY_CNT);
@@ -298,20 +303,20 @@ void i2cReadDone(void* pvCallbackData, uint_fast8_t ui8Status) {
 
 // Reads out 1 byte from the address range 0x20 - 0x27 (where PCFL can be) from all 4 I2C channels.
 // Interrupt driven and runs in background. Writes to the global data and state arrays
-//    Finished when g_readCounter == 4*MAX_PCLS_PER_CHANNEL
+//    Finished when g_readCounter == 4 * MAX_PCLS_PER_CHANNEL
 // The I2C status of a read is stored in the 2D array [channel][ADR] g_i2cReadStates
 // Only the inputs are read which have not previously reported an I2C error
 // e.g., the ones which are actually connected!
-// @ToDo: only disable inputs on specific I2C error, which comes up when there is no dev. connected (maybe I2CM_STATUS_ADDR_NACK or I2CM_STATUS_ARB_LOST)
 void i2cStartPCFL8574refresh() {
     uint8_t nPcf, nChannel, previousState;//, queueSize;
-    xSemaphoreGive( g_pcfReadsInProgress );     //Make sure `I2C-DONE` cannot be triggered before all jobs are added
-    for (nPcf=0; nPcf<=PCF_MAX_PER_CHANNEL - 1; nPcf++) {
-        for (nChannel=0; nChannel<=3; nChannel++) {
+    // Make sure `I2C-DONE` cannot be triggered before all jobs are added
+    xSemaphoreGive(g_pcfReadsInProgress);
+    for (nPcf = 0; nPcf < PCF_MAX_PER_CHANNEL; nPcf++) {
+        for (nChannel = 0; nChannel <= 3; nChannel++) {
             previousState = g_I2CState[nChannel][nPcf];
             if(previousState >> 4 != 0){
-                // Channel is disabled
-                // Can only be re-activated by `DISC` command
+                // PCF is disabled
+                // Can only be re-activated by `I2CR` command
                 continue;
             }
             previousState &= 0x0F;
@@ -341,12 +346,13 @@ void i2cStartPCFL8574refresh() {
             //     0x20 + nPcf,
             //     previousState
             // );
-            REPORT_ERROR( "ER:0001\n" );
+            REPORT_ERROR("ER:0001\n");
             // Disable the channel
             g_I2CState[nChannel][nPcf] |= 0x10;
         }
     }
-    xSemaphoreTake(g_pcfReadsInProgress, 1);     //Only now `I2C-DONE` can be triggered from the callback
+    // Only after this, `I2C-DONE` can be triggered from the callback
+    xSemaphoreTake(g_pcfReadsInProgress, 1);
     // In case the I2C callback was fired already, manually check if I2C is done here
     if (uxQueueMessagesWaiting(g_pcfReadsInProgress) == 0) { //done with all reads
         configASSERT(hPcfInReader != NULL);
@@ -677,12 +683,12 @@ void taskPCFOutWriter(void *pvParameters) {
             p = &g_outWriterList[i];
             if (p->i2cChannel < 0 ||
                 p->i2cChannel > 3 ||
-                p->i2cAddress < 0x20 ||
-                p->i2cAddress > 0x27){
+                p->i2cAddress < PCF_LOWEST_ADDR ||
+                p->i2cAddress > PCF_LOWEST_ADDR + PCF_MAX_PER_CHANNEL - 1){
                 continue;
                 // Invalid item, ignore.
             }
-            uint8_t lastState = g_I2CState[p->i2cChannel][p->i2cAddress - 0x20];
+            uint8_t lastState = g_I2CState[p->i2cChannel][p->i2cAddress - PCF_LOWEST_ADDR];
             if (lastState != I2CM_STATUS_SUCCESS){
                 // Last read failed, ignore!
                 continue;
