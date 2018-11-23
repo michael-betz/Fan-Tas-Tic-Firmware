@@ -45,7 +45,8 @@
 
 //My stuff
 #include "myTasks.h"
-#include "i2cHandlerTask.h"
+#include "i2c_in.h"
+#include "i2c_out.h"
 #include "mySpi.h"
 #include "main.h"
 
@@ -261,14 +262,14 @@ int main(void) {
     // Lowest Int priority  = (7<<5)
     //-------------------------------------------------------------------------
     ROM_IntPrioritySet(INT_USB0, (6<<5));     //USB = Low priority
-    ROM_IntPrioritySet(INT_I2C0, (5<<5));     //I2C = Medium priority
-    ROM_IntPrioritySet(INT_I2C1, (5<<5));
-    ROM_IntPrioritySet(INT_I2C2, (5<<5));
-    ROM_IntPrioritySet(INT_I2C3, (5<<5));
-    ROM_IntPrioritySet(INT_UART0,(7<<5));     //Debug UART = Lowest priority
-    ROM_IntPrioritySet(INT_SSI1, (4<<5));     //SPI  = High priority
-    ROM_IntPrioritySet(INT_SSI2, (4<<5));
-    ROM_IntPrioritySet(INT_SSI3, (4<<5));
+    ROM_IntPrioritySet(INT_I2C0, (6<<5));     //I2C = Medium priority
+    ROM_IntPrioritySet(INT_I2C1, (6<<5));
+    ROM_IntPrioritySet(INT_I2C2, (6<<5));
+    ROM_IntPrioritySet(INT_I2C3, (6<<5));
+    ROM_IntPrioritySet(INT_UART0,(6<<5));     //Debug UART = Lowest priority
+    ROM_IntPrioritySet(INT_SSI1, (6<<5));     //SPI  = High priority
+    ROM_IntPrioritySet(INT_SSI2, (6<<5));
+    ROM_IntPrioritySet(INT_SSI3, (6<<5));
 
     //-------------------------------------------------------------------------
     // Startup the FreeRTOS scheduler

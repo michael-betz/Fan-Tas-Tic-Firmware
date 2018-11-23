@@ -45,7 +45,8 @@
 #include "drivers/usb_serial_structs.h"
 #include "myTasks.h"
 #include "mySpi.h"
-#include "i2cHandlerTask.h"
+#include "i2c_in.h"
+#include "i2c_out.h"
 #include "main.h"
 
 //*****************************************************************************

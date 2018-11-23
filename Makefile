@@ -1,5 +1,5 @@
 # VERBOSE = 1
-DEBUG = 1
+# DEBUG = 1
 TARGET = fantastic
 PART = TM4C123GH6PM
 ROOT = /home/michael/ti/tivaware
@@ -17,7 +17,8 @@ VPATH      += $(ROOT)/third_party/FreeRTOS/Source
 VPATH      += $(ROOT)/third_party/FreeRTOS/Source/portable/GCC/ARM_CM4F
 VPATH      += $(ROOT)/third_party/FreeRTOS/Source/portable/MemMang
 # Files to compile
-SRCS        = i2cHandlerTask.c  main.c  mySpi.c  myTasks.c  startup_gcc.c
+SRCS        = i2c_in.c i2c_out.c switch_matrix.c
+SRCS       += main.c  mySpi.c  myTasks.c  startup_gcc.c
 SRCS       += my_uartstdio.c usbCallbacks.c  usb_serial_structs.c
 SRCS       += cmdline.c ustdlib.c
 # FreeRTOS stuff from tivaware folder

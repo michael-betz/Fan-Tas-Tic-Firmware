@@ -7,15 +7,17 @@
 
 #ifndef FAN_TAS_TIC_CONTROLLER_MYTASKS_H_
 #define FAN_TAS_TIC_CONTROLLER_MYTASKS_H_
+#include <stdint.h>
 #include <string.h>
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
 
 //*****************************************************************************
 // Defines
 //*****************************************************************************
-#define N_BIT_PWM 3
 //#define CMD_PARSER_BUF_LEN (N_LEDS_MAX*3+28)   //Need 3072 for LED data blob of 1 channel
 #define CMD_PARSER_BUF_LEN 128                   //Most commands fit
-#define OUT_WRITER_LIST_LEN 64                   //Max. number of output channels
 #define CUSTOM_I2C_BUF_LEN 64
 
 //*****************************************************************************

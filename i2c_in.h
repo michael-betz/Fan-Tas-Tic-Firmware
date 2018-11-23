@@ -1,13 +1,11 @@
-/*
- * i2cHandlerTask.h
- *
- *  Created on: Dec 24, 2015
- *      Author: michael
- */
-
-#ifndef I2CHANDLERTASK_H_
-#define I2CHANDLERTASK_H_
+#ifndef I2C_IN_H_
+#define I2C_IN_H_
+#include <stdint.h>
+#include <stdbool.h>
+#include "FreeRTOS.h"
+#include "task.h"
 #include "sensorlib/i2cm_drv.h"
+#include "i2c_out.h"
 
 //*****************************************************************************
 // Defines
@@ -37,20 +35,6 @@
 #define QRF_ENABLED		  3
 #define QRF_STATE_TRIG    4
 
-// Define Port pins to the Switch Matrix column driver (shift register IC)
-#define SM_COL_DAT GPIO_PIN_0
-#define SM_COL_CLK GPIO_PIN_1
-
-//resetSMcol() + 8 * advanceSMcol() should take ~ 500 us
-// At 80 MHz We should spent 40000 instructions
-// We got 320 + 160 + 60 = 530 useful instr.
-// We got 6 + 16 + 32 = 54 delay calls which do n*3 instructions
-// So each delay call should do ... delay units:
-// (40000 - 530)/54/3 = 244
-// 200 --> Switch matrix has ~ 8 us to settle
-#define SM_COL_DELAY_CNT 100
-
-
 //*****************************************************************************
 // Custom types
 //*****************************************************************************
@@ -66,20 +50,6 @@ typedef union {
     uint32_t longValues[N_LONGS]; //Should be 10 long
     uint8_t charValues[N_CHARS];  //Should be 40 byte
 } t_switchStateConverter;
-
-// Holds the target hardware a hwIndex is referring to (Switch matrix, I2C port extender, HW. PWM channel)
-typedef enum {
-    HW_INDEX_INVALID, HW_INDEX_SWM, HW_INDEX_I2C, HW_INDEX_HWPWM
-} t_hwIndexType;
-
-// Holds all information of a decoded hwIndex
-typedef struct {
-    t_hwIndexType hwIndexType;
-    uint8_t byteIndex;              // Refers to the g_SwitchOutBuffer.charValues array;
-    int8_t pinIndex;                // which bit is relevant [0 - 7]
-    int8_t i2cChannel;              // [0 - 3]
-    uint8_t i2cAddress;             // Right shifted 7 bit I2C addr
-} t_outputBit;
 
 // Holds the state of a quick-fire rule
 typedef struct {
@@ -115,7 +85,7 @@ extern tI2CMInstance g_sI2CInst[4];
 extern unsigned g_I2CState[4][PCF_MAX_PER_CHANNEL];      //Status of last transmission
 // bit 3 ... 0 = status code
 
-extern TaskHandle_t hPcfInReader;                  //Task handle for restarting
+extern TaskHandle_t hPcfInReader;
 
 // Buffer bits of current I2C GPIO input state
 extern t_switchStateConverter g_SwitchStateSampled;	    //Read values of last I2C scan
@@ -145,9 +115,4 @@ void setupQuickRule(uint8_t id, t_outputBit inputSwitchId,
 void enableQuickRule(uint8_t id);
 void disableQuickRule(uint8_t id);
 
-t_outputBit decodeHwIndex( uint16_t hwIndex, uint8_t asInput );
-void setPCFOutput(t_outputBit outLocation, int16_t tPulse, uint16_t highPower, uint16_t lowPower);
-void taskPCFOutWriter(void *pvParameters);
-void disableAllWriters(void);
-
-#endif /* I2CHANDLERTASK_H_ */
+#endif /* I2C_IN_H_ */

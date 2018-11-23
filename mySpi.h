@@ -7,6 +7,9 @@
 
 #ifndef FAN_TAS_TIC_CONTROLLER_MYSPI_H_
 #define FAN_TAS_TIC_CONTROLLER_MYSPI_H_
+#include <stdint.h>
+#include "FreeRTOS.h"
+#include "semphr.h"
 
 //*****************************************************************************
 // Defines
@@ -18,7 +21,6 @@
 //*****************************************************************************
 // Custom types
 //*****************************************************************************
-
 typedef enum{
     SPI_IDLE, SPI_SEND_PING, SPI_SEND_PONG, SPI_SEND_ZERO
 }t_spiDmaState;

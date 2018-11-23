@@ -1,15 +1,13 @@
-/*
- * main.h
- *
- *  Created on: Mar 28, 2015
- *      Author: M. Betz
- */
-
 #ifndef FAN_TAS_TIC_CONTROLLER_MAIN_H_
 #define FAN_TAS_TIC_CONTROLLER_MAIN_H_
 
+#include <stdint.h>
+
 #define VERSION_IDN  "ID:MB:V0.2\n"
 #define VERSION_IDN_LEN 11
+#ifndef GIT_VERSION
+    #define GIT_VERSION "None"
+#endif
 #define VERSION_INFO "\nFan-Tas-Tic pinball controller\nM. Betz, 11/2018\nGit: " GIT_VERSION "\n"
 
 // System clock rate, 80 MHz

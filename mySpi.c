@@ -11,22 +11,16 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "inc/hw_memmap.h"
-#include "inc/hw_types.h"
 #include "inc/hw_ints.h"
 #include "inc/hw_ssi.h"
-#include "inc/hw_udma.h"
 //*****************************************************************************
 // FreeRTOS includes
 //*****************************************************************************
-#include "FreeRTOSConfig.h"
 #include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
-#include "semphr.h"
 //*****************************************************************************
 // TivaWare includes
 //*****************************************************************************
-#include "driverlib/i2c.h"
+// #include "driverlib/i2c.h"
 #include "driverlib/ssi.h"
 #include "driverlib/udma.h"
 #include "driverlib/pin_map.h"
@@ -35,8 +29,6 @@
 #include "driverlib/interrupt.h"
 #include "driverlib/rom.h"
 #include "driverlib/sysctl.h"
-#include "utils/ustdlib.h"
-#include "utils/cmdline.h"
 #include "my_uartstdio.h"
 //*****************************************************************************
 // USB stuff
@@ -45,9 +37,7 @@
 #include "usblib/usbcdc.h"
 #include "usblib/device/usbdevice.h"
 #include "usblib/device/usbdcdc.h"
-#include "drivers/usb_serial_structs.h"
 #include "myTasks.h"
-#include "i2cHandlerTask.h"
 #include "mySpi.h"
 
 //*****************************************************************************
