@@ -17,7 +17,7 @@ VPATH      += $(ROOT)/third_party/FreeRTOS/Source
 VPATH      += $(ROOT)/third_party/FreeRTOS/Source/portable/GCC/ARM_CM4F
 VPATH      += $(ROOT)/third_party/FreeRTOS/Source/portable/MemMang
 # Files to compile
-SRCS        = i2c_in.c i2c_out.c switch_matrix.c
+SRCS        = i2c_inout.c switch_matrix.c bit_rules.c
 SRCS       += main.c  mySpi.c  myTasks.c  startup_gcc.c
 SRCS       += my_uartstdio.c usbCallbacks.c  usb_serial_structs.c
 SRCS       += cmdline.c ustdlib.c
@@ -34,7 +34,7 @@ OBJS       += $(TARGET).ld
 #--------------------------------
 # Header files (.h)
 #--------------------------------
-IPATH 	    = . drivers
+IPATH 	    = .
 IPATH      += $(ROOT)
 IPATH      += $(ROOT)/third_party/FreeRTOS/Source/include
 IPATH      += $(ROOT)/third_party/FreeRTOS/Source/portable/GCC/ARM_CM4F

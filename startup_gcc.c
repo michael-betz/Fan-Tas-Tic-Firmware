@@ -29,6 +29,8 @@
 #include "driverlib/rom.h"
 #include "driverlib/gpio.h"
 
+#include "i2c_inout.h"
+
 //*****************************************************************************
 //
 // Forward declaration of the default fault handlers.
@@ -45,10 +47,6 @@ extern void vPortSVCHandler(void);
 extern void xPortSysTickHandler(void);
 extern void USB0DeviceIntHandler(void);
 extern void UARTStdioIntHandler(void);
-extern void i2CIntHandler0(void);
-extern void i2CIntHandler1(void);
-extern void i2CIntHandler2(void);
-extern void i2CIntHandler3(void);
 extern void spiISR( uint8_t channel );
 void spiISR0(){ spiISR(0); }
 void spiISR1(){ spiISR(1); }

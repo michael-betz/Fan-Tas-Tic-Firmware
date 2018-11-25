@@ -24,9 +24,6 @@
 #include "driverlib/pin_map.h"
 #include "driverlib/gpio.h"
 #include "driverlib/sysctl.h"
-#include "driverlib/debug.h"
-#include "driverlib/rom.h"
-#include "driverlib/interrupt.h"
 #include "my_uartstdio.h"
 
 // FreeRTOS includes
@@ -45,8 +42,8 @@
 
 //My stuff
 #include "myTasks.h"
-#include "i2c_in.h"
-#include "i2c_out.h"
+#include "i2c_inout.h"
+#include "bit_rules.h"
 #include "mySpi.h"
 #include "main.h"
 
@@ -282,12 +279,6 @@ int main(void) {
 
     // Create USB command parser task
     xTaskCreate(taskUsbCommandParser, (const portCHAR *)"Parser", 128, NULL, 1, &hUSBCommandParser);
-
-    // Create I2C / Matrix debouncer
-    xTaskCreate(taskPcfInReader, (const portCHAR *)"PCFreader", 128, NULL, 0, &hPcfInReader);
-
-    // Dispatch I2C write commands to PCL GPIO extenders every 1 ms
-    xTaskCreate(taskPCFOutWriter, (const portCHAR *)"PCFwriter", 128, NULL, 1, NULL);
 
     vTaskStartScheduler();  // This should never return!
     return 0;

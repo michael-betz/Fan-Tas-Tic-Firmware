@@ -1,5 +1,4 @@
-// Read the 8 x 8 Switch Matrix through a
-// serial shift register
+// Scan the 8 x 8 Switch Matrix through a serial shift register
 
 #include <stdint.h>
 #include <stdbool.h>
