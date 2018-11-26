@@ -271,8 +271,11 @@ int main(void) {
     //-------------------------------------------------------------------------
     // Startup the FreeRTOS scheduler
     //-------------------------------------------------------------------------
-    // Create demo tasks
+    // Blink LED
     xTaskCreate(taskDemoLED, (const portCHAR *)"LEDr", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+
+    // Handle reading / writing all IOs
+    xTaskCreate(task_pcf_io, (const portCHAR *)"IO", 128, NULL, 1, &hPcfInReader);
 
     // Report result of custom I2C transaction to commandline
     // xTaskCreate(taskI2CCustomReporter, (const portCHAR *)"I2CcusRep", configMINIMAL_STACK_SIZE, NULL, 1, &hCustomI2cTask);

@@ -18,7 +18,9 @@
 typedef struct {
     uint8_t flags;
     uint8_t i2c_addr;
-    uint8_t last_value;
+    // Values are read into this address
+    uint8_t *value_target;
+    uint8_t value;
     uint8_t last_err_mcs;
     unsigned err_cnt;
     // -------------------
@@ -27,9 +29,9 @@ typedef struct {
     // these 4 bytes will be written in sequence to the PCF
     // at 2^N time intervals (binary code modulation)
     uint8_t bcm_buffer[N_BIT_PWM];
-} t_pcfState;
+} t_pcf_state;
 
-// bit masks for t_pcfState->flags
+// bit masks for t_pcf_state->flags
 #define FPCF_RENABLED (1<<0)    // 1 = Read PCF
 #define FPCF_WENABLED (1<<1)    // 1 = Write PCF
 
@@ -54,22 +56,10 @@ typedef struct {
     uint8_t int_addr;
     t_i2cState i2c_state;
     uint8_t currentPcf;
-    t_pcfState pcf_state[PCF_MAX_PER_CHANNEL];
+    t_pcf_state pcf_state[PCF_MAX_PER_CHANNEL];
 } t_i2cChannelState;
 
-// Holds the target hardware a hwIndex is referring to (Switch matrix, I2C port extender, HW. PWM channel)
-typedef enum {
-    HW_INDEX_INVALID, HW_INDEX_SWM, HW_INDEX_I2C, HW_INDEX_HWPWM
-} t_hwIndexType;
-
-// Holds all information of a decoded hwIndex
-typedef struct {
-    t_hwIndexType hwIndexType;
-    uint8_t byteIndex;              // Refers to the g_SwitchOutBuffer.charValues array;
-    int8_t pinIndex;                // which bit is relevant [0 - 7]
-    int8_t i2cChannel;              // [0 - 3]
-    uint8_t i2cAddress;             // Right shifted 7 bit I2C addr
-} t_outputBit;
+#include "bit_rules.h"
 
 //--------------
 // Functions
@@ -80,6 +70,10 @@ void init_i2c_system();
 void trigger_i2c_cycle();
 // Print table of state and error counts to UART
 void print_pcf_state();
+// Return pointer to pcf_state instance of this pin
+t_pcf_state *get_pcf(t_hw_index *pin);
+// Update a bcm buffer with a new pwm value
+void setBcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue);
 // i2c interrupt service routine
 void i2c_isr(t_i2cChannelState *state);
 // these just call i2c_isr with the right arg

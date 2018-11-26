@@ -39,6 +39,7 @@
 #include "usblib/device/usbdcdc.h"
 #include "myTasks.h"
 #include "mySpi.h"
+#include "main.h"
 
 //*****************************************************************************
 // The control table used by the uDMA controller.  This table must be aligned

@@ -2,15 +2,13 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
-
 #include "driverlib/rom.h"
 #include "driverlib/gpio.h"
-
-#include "i2c_in.h"
 #include "switch_matrix.h"
+#include "bit_rules.h"
+
 
 uint8_t getSMrow() {
     uint8_t temp = 0;

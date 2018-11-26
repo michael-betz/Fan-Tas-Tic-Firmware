@@ -45,8 +45,7 @@
 #include "drivers/usb_serial_structs.h"
 #include "myTasks.h"
 #include "mySpi.h"
-#include "i2c_in.h"
-#include "i2c_out.h"
+#include "bit_rules.h"
 #include "main.h"
 
 //*****************************************************************************
@@ -324,19 +323,7 @@ int Cmd_IDN(int argc, char *argv[]) {
 }
 
 int Cmd_IL(int argc, char *argv[]){
-    UARTprintf("--------------------------\n");
-    UARTprintf(" Ch  Adr  HwI  State\n");
-    UARTprintf("--------------------------\n");
-    for (unsigned ch=0; ch<=3; ch++) {
-        for (unsigned i = 0; i <= PCF_MAX_PER_CHANNEL - 1; i++) {
-            unsigned s = g_I2CState[ch][i];
-            UARTprintf(
-                " %2x  %02x   %03x  %x %s\n",
-                ch, 0x20 + i, 0x40 + ch * 0x40 + i * 8, s, getI2cStateStr(s)
-            );
-        }
-    }
-    UARTprintf("--------------------------\n");
+    print_pcf_state();
     return 0;
 }
 
@@ -355,7 +342,7 @@ int Cmd_SW(int argc, char *argv[]) {
     uint8_t i;
     ustrncpy(outBuffer, "SW:", REPORT_SWITCH_BUF_SIZE); //SW = Hex coded switch state
     for (i = 0; i < N_LONGS; i++) {
-        charsWritten += usnprintf( &outBuffer[charsWritten], REPORT_SWITCH_BUF_SIZE - charsWritten, "%08x", g_SwitchStateDebounced.longValues[i] );
+        charsWritten += usnprintf(&outBuffer[charsWritten], REPORT_SWITCH_BUF_SIZE - charsWritten, "%08x", g_SwitchStateDebounced.longValues[i]);
         if (charsWritten >= REPORT_SWITCH_BUF_SIZE - 1) {
             REPORT_ERROR( "ER:000C\n" );
             UARTprintf("Cmd_SW(): string buffer overflow!\n");
@@ -371,12 +358,12 @@ int Cmd_DEB(int argc, char *argv[]) {
     //Enable / Disable the 12 ms debouncing timer for an input
     uint16_t hwIndex;
     uint8_t onOff;
-    t_outputBit inputSwitchId;
+    t_hw_index inputSwitchId;
     if (argc == 3) {
         hwIndex = ustrtoul(argv[1], NULL, 0);
         onOff = ustrtoul(argv[2], NULL, 0);     // 1: Debouncing ON
         inputSwitchId = decodeHwIndex( hwIndex, 1 );
-        if (inputSwitchId.hwIndexType == HW_INDEX_INVALID) {
+        if (inputSwitchId.channel == C_INVALID) {
             REPORT_ERROR( "ER:000D\n" );
             UARTprintf( "%22s: inputSwitchId = %s invalid\n", "Cmd_DEB()", argv[1] );
             return 0;
@@ -415,7 +402,7 @@ int Cmd_OUT(int argc, char *argv[]) {
 //    OUT 0x0FE 1 1500 15
 //    OUT 0x0FE 2
     int32_t hwIndex;
-    t_outputBit outLocation;
+    t_hw_index outLocation;
     uint16_t tPulse, pwmHigh, pwmLow;
     if (argc == 5) {
         tPulse  = ustrtoul(argv[3], NULL, 0);
@@ -429,34 +416,37 @@ int Cmd_OUT(int argc, char *argv[]) {
         return( CMDLINE_TOO_FEW_ARGS );
     }
     hwIndex = ustrtoul(argv[1], NULL, 0);
-    outLocation = decodeHwIndex( hwIndex, 0 );
-    switch( outLocation.hwIndexType ){
-    case HW_INDEX_I2C:
+    outLocation = decodeHwIndex(hwIndex, 0);
+    switch(outLocation.channel){
+    case C_I2C0:
+    case C_I2C1:
+    case C_I2C2:
+    case C_I2C3:
         if (pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM)) {
             REPORT_ERROR( "ER:000E\n" );
             UARTprintf("Cmd_OUT(): I2C PWMvalue must be < %d\n", (1 << N_BIT_PWM));
             return 0;
         }
-        UARTprintf("Cmd_OUT(): i2cCh %d, i2cAdr 0x%02x, bit %d = tp %d, pH %d, pL %d\n", outLocation.i2cChannel, outLocation.i2cAddress, outLocation.pinIndex, tPulse, pwmHigh, pwmLow);
-        setPCFOutput(outLocation, tPulse, pwmHigh, pwmLow);
+        UARTprintf("Cmd_OUT(): i2cCh %d, i2cAdr 0x%02x, bit %d = tp %d, pH %d, pL %d\n", outLocation.channel, outLocation.i2c_addr, outLocation.pinIndex, tPulse, pwmHigh, pwmLow);
+        setPCFOutput(&outLocation, tPulse, pwmHigh, pwmLow);
         return 0;
 
-    case HW_INDEX_HWPWM:
+    case C_FAST_PWM:
         if ( pwmHigh > MAX_PWM || pwmLow > MAX_PWM ) {
             REPORT_ERROR( "ER:000F\n" );
             UARTprintf("Cmd_OUT(): HW PWMvalue must be <= %d\n", MAX_PWM);
             return 0;
         }
         UARTprintf("Cmd_OUT(): HW_PWM_CH %d, tp %d, pH %d, pL %d\n", outLocation.pinIndex, tPulse, pwmHigh, pwmLow);
-        setPCFOutput(outLocation, tPulse, pwmHigh, pwmLow);
+        setPCFOutput(&outLocation, tPulse, pwmHigh, pwmLow);
         return 0;
 
-    case HW_INDEX_SWM:
+    case C_SWITCH_MATRIX:
         REPORT_ERROR( "ER:0010\n" );
         UARTprintf("Cmd_OUT(): HW_INDEX_INVALID: %s\n", argv[1]);
         return 0;
 
-    case HW_INDEX_INVALID:
+    case C_INVALID:
         REPORT_ERROR( "ER:0011\n" );
         UARTprintf("Cmd_OUT(): HW_INDEX_INVALID: %s\n", argv[1]);
         return 0;
@@ -523,7 +513,7 @@ int Cmd_RUL(int argc, char *argv[]) {
     uint8_t id;
     int16_t pwmHigh, pwmLow;
     uint16_t triggerHoldOffTime, tPulse, hwIndex;
-    t_outputBit inputSwitchId, outputDriverId;
+    t_hw_index inputSwitchId, outputDriverId;
     bool trigPosEdge;
     if (argc == 9) {
         id = ustrtoul(argv[1], NULL, 0);
@@ -539,30 +529,33 @@ int Cmd_RUL(int argc, char *argv[]) {
             return 0;
         }
         inputSwitchId = decodeHwIndex( ustrtoul(argv[2], NULL, 0), 1 );
-        if ( inputSwitchId.hwIndexType==HW_INDEX_INVALID ) {
+        if ( inputSwitchId.channel == C_INVALID) {
             REPORT_ERROR( "ER:0015\n" );
             UARTprintf( "%22s: inputSwitchId = %s invalid\n", "Cmd_RUL()", argv[2] );
             return 0;
         }
         hwIndex = ustrtoul(argv[3], NULL, 0);
-        outputDriverId = decodeHwIndex( hwIndex, 0 );
-        switch( outputDriverId.hwIndexType ){
-        case HW_INDEX_I2C:
+        outputDriverId = decodeHwIndex(hwIndex, 0);
+        switch (outputDriverId.channel){
+        case C_I2C0:
+        case C_I2C1:
+        case C_I2C2:
+        case C_I2C3:
             if ( pwmHigh >= (1 << N_BIT_PWM) || pwmLow >= (1 << N_BIT_PWM) ) {
                 REPORT_ERROR( "ER:0016\n" );
                 UARTprintf( "%22s: pwmValues must be < %d\n", "Cmd_RUL()", (1 << N_BIT_PWM) );
                 return 0;
             }
             break;
-        case HW_INDEX_HWPWM:
-            if ( pwmHigh > MAX_PWM || pwmLow > MAX_PWM ) {
-                REPORT_ERROR( "ER:0017\n" );
-                UARTprintf( "%22s: HW pwmValues must be < %d\n", "Cmd_RUL()", MAX_PWM );
+        case C_FAST_PWM:
+            if (pwmHigh > MAX_PWM || pwmLow > MAX_PWM) {
+                REPORT_ERROR("ER:0017\n");
+                UARTprintf("%22s: HW pwmValues must be < %d\n", "Cmd_RUL()", MAX_PWM);
                 return 0;
             }
             break;
-        case HW_INDEX_INVALID:
-        case HW_INDEX_SWM:
+        case C_INVALID:
+        case C_SWITCH_MATRIX:
             REPORT_ERROR( "ER:0018\n" );
             UARTprintf( "%22s: outputDriverId = %s invalid\n", "Cmd_RUL()", argv[3] );
             return 0;
@@ -706,45 +699,45 @@ void cmdI2CCallback(void* pvCallbackData, uint_fast8_t ui8Status){
 }
 
 int Cmd_I2C(int argc, char *argv[]) {
-    //I2C <channel> <I2Caddr> <sendData> <nBytesRx>
-    static uint8_t txBuffer[CUSTOM_I2C_BUF_LEN];
-    uint8_t channel, i2cAddr, *readPointer, *writePointer;
-    uint16_t nBytesTx, temp;
-    if ( argc == 5 ){
-        channel  = ustrtoul(argv[1], NULL, 0);
-        if ( channel > 3 ){
-            REPORT_ERROR( "ER:001E\n" );
-            UARTprintf("%22s: I2C Channel must be <= 4\n", "Cmd_I2C()");
-            return 0;
-        }
-        i2cAddr  = ustrtoul(argv[2], NULL, 0);
-        g_customI2CnBytesRx = ustrtoul(argv[4], NULL, 0);
-        nBytesTx = ustrlen( argv[3] )/2;      //argv[3] string contains hex characters [0FFEDEADBEEF]
-        writePointer = txBuffer;
-        readPointer = (uint8_t*)argv[3];
-        if( g_customI2CnBytesRx > CUSTOM_I2C_BUF_LEN ){
-            REPORT_ERROR( "ER:001F\n" );
-            UARTprintf("%22s: Too many bytes to receive: %d, max. %d\n", "Cmd_I2C()", g_customI2CnBytesRx, CUSTOM_I2C_BUF_LEN);
-            return 0;
-        }
-        if( nBytesTx > CUSTOM_I2C_BUF_LEN ){
-            REPORT_ERROR( "ER:0020\n" );
-            UARTprintf("%22s: Too many bytes to send: %d, max. %d\n", "Cmd_I2C()", nBytesTx, CUSTOM_I2C_BUF_LEN);
-            return 0;
-        }
-        for( temp=0; temp<nBytesTx; temp++ ){
-            *writePointer  = hexDigitToNibble( *readPointer++ )<<4;
-            *writePointer |= hexDigitToNibble( *readPointer++ );
-            writePointer++;
-        }
-        // Take the binary semaphore g_semaCustomI2C (released after reporting result on USB)
-        if( xSemaphoreTake( g_SemaCustomI2C, 3000 ) ){
-            ts_i2cTransfer( channel, i2cAddr, txBuffer, nBytesTx, g_customI2CrxBuffer, g_customI2CnBytesRx, cmdI2CCallback, NULL );
-        } else {
-            REPORT_ERROR( "ER:0020\n" );
-            UARTprintf("%22s: Timeout, could not acquire custom I2C Semaphore\n", "Cmd_I2C()");
-        }
-        return 0;
-    }
+    // //I2C <channel> <I2Caddr> <sendData> <nBytesRx>
+    // static uint8_t txBuffer[CUSTOM_I2C_BUF_LEN];
+    // uint8_t channel, i2cAddr, *readPointer, *writePointer;
+    // uint16_t nBytesTx, temp;
+    // if ( argc == 5 ){
+    //     channel  = ustrtoul(argv[1], NULL, 0);
+    //     if ( channel > 3 ){
+    //         REPORT_ERROR( "ER:001E\n" );
+    //         UARTprintf("%22s: I2C Channel must be <= 4\n", "Cmd_I2C()");
+    //         return 0;
+    //     }
+    //     i2cAddr  = ustrtoul(argv[2], NULL, 0);
+    //     g_customI2CnBytesRx = ustrtoul(argv[4], NULL, 0);
+    //     nBytesTx = ustrlen( argv[3] )/2;      //argv[3] string contains hex characters [0FFEDEADBEEF]
+    //     writePointer = txBuffer;
+    //     readPointer = (uint8_t*)argv[3];
+    //     if( g_customI2CnBytesRx > CUSTOM_I2C_BUF_LEN ){
+    //         REPORT_ERROR( "ER:001F\n" );
+    //         UARTprintf("%22s: Too many bytes to receive: %d, max. %d\n", "Cmd_I2C()", g_customI2CnBytesRx, CUSTOM_I2C_BUF_LEN);
+    //         return 0;
+    //     }
+    //     if( nBytesTx > CUSTOM_I2C_BUF_LEN ){
+    //         REPORT_ERROR( "ER:0020\n" );
+    //         UARTprintf("%22s: Too many bytes to send: %d, max. %d\n", "Cmd_I2C()", nBytesTx, CUSTOM_I2C_BUF_LEN);
+    //         return 0;
+    //     }
+    //     for( temp=0; temp<nBytesTx; temp++ ){
+    //         *writePointer  = hexDigitToNibble( *readPointer++ )<<4;
+    //         *writePointer |= hexDigitToNibble( *readPointer++ );
+    //         writePointer++;
+    //     }
+    //     // Take the binary semaphore g_semaCustomI2C (released after reporting result on USB)
+    //     if( xSemaphoreTake( g_SemaCustomI2C, 3000 ) ){
+    //         ts_i2cTransfer( channel, i2cAddr, txBuffer, nBytesTx, g_customI2CrxBuffer, g_customI2CnBytesRx, cmdI2CCallback, NULL );
+    //     } else {
+    //         REPORT_ERROR( "ER:0020\n" );
+    //         UARTprintf("%22s: Timeout, could not acquire custom I2C Semaphore\n", "Cmd_I2C()");
+    //     }
+    //     return 0;
+    // }
     return CMDLINE_TOO_FEW_ARGS;
 }

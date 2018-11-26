@@ -34,7 +34,7 @@ OBJS       += $(TARGET).ld
 #--------------------------------
 # Header files (.h)
 #--------------------------------
-IPATH 	    = .
+IPATH 	    = . drivers
 IPATH      += $(ROOT)
 IPATH      += $(ROOT)/third_party/FreeRTOS/Source/include
 IPATH      += $(ROOT)/third_party/FreeRTOS/Source/portable/GCC/ARM_CM4F

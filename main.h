@@ -1,6 +1,5 @@
 #ifndef FAN_TAS_TIC_CONTROLLER_MAIN_H_
 #define FAN_TAS_TIC_CONTROLLER_MAIN_H_
-
 #include <stdint.h>
 
 #define VERSION_IDN  "ID:MB:V0.2\n"
@@ -23,6 +22,9 @@
 #define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
 #define MAX(X,Y) ((X) > (Y) ? (X) : (Y))
 
+//---------------------
+// Functions
+//---------------------
 void configureTimer();
 void startTimer();
 uint32_t stopTimer();
