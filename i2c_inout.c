@@ -67,12 +67,12 @@ static void i2cUnstucker(uint32_t base, uint8_t pin_SCL, uint8_t pin_SDA){
     ROM_GPIOPinWrite(base, pin_SDA, 0xFF);
     for (unsigned i=0; i<16; i++){
         ROM_GPIOPinWrite(base, pin_SCL, 0x00);
-        ROM_SysCtlDelay(100);   // ~ 4 us @ 80 MHz
+        ROM_SysCtlDelay(25);   // ~ 4 us @ 80 MHz
         ROM_GPIOPinWrite(base, pin_SCL, 0xFF);
-        ROM_SysCtlDelay(100);
+        ROM_SysCtlDelay(25);
     }
     GPIOPinTypeGPIOInput(base, pin_SDA | pin_SCL);
-    ROM_SysCtlDelay(100);
+    ROM_SysCtlDelay(25);
     unsigned rVal = GPIOPinRead(base, pin_SDA | pin_SCL);
     rVal = ~rVal & (pin_SDA | pin_SCL);
     if(rVal){
@@ -84,7 +84,6 @@ static void i2cUnstucker(uint32_t base, uint8_t pin_SCL, uint8_t pin_SDA){
         UARTprintf("\n");
     }
 }
-
 
 t_pcf_state *get_pcf(t_hw_index *pin)
 {
@@ -123,22 +122,40 @@ static void i2c_state_init(t_i2cChannelState *state, uint32_t base_addr, uint_fa
     state->int_addr = int_addr;
     state->i2c_state = I2C_IDLE;
     state->currentPcf = 0;
-    for(unsigned i=0; i<PCF_MAX_PER_CHANNEL; i++){
-        t_pcf_state *pcf = &state->pcf_state[i];
+    t_pcf_state *pcf = state->pcf_state;
+    for (unsigned i=0; i<PCF_MAX_PER_CHANNEL; i++) {
         my_pcf_init(pcf);
         pcf->i2c_addr = PCF_LOWEST_ADDR + i;
+        pcf++;
     }
-
-    // Initialize the I2C master module.
-    ROM_I2CMasterInitExpClk(base_addr, SYSTEM_CLOCK, true);
-
-    // Enable the I2C interrupt.
-    ROM_IntEnable(int_addr);
+    IntPendClear(int_addr);
+    IntEnable(int_addr);
     ROM_I2CMasterIntEnableEx(base_addr, I2C_MASTER_INT_DATA);
 }
 
+// Send byte over i2c and block (no interrupts)
+// b = base_addr, addr = left shifted i2c address
+void i2c_send(uint32_t b, uint8_t addr, uint8_t data)
+{
+    while (HWREG(b + I2C_O_MCS) & I2C_MCS_BUSY);
+    HWREG(b + I2C_O_MSA) = (addr<<1) | 0;
+    HWREG(b + I2C_O_MDR) = data;
+    HWREG(b + I2C_O_MCS) = I2C_MCS_STOP | I2C_MCS_START | I2C_MCS_RUN;
+}
+
+// Yield from the task until i2c transaction complete
+void i2c_send_yield(uint8_t channel, uint8_t addr, uint8_t data)
+{
+    t_i2cChannelState *c = &g_sI2CInst[channel];
+    if (c->i2c_state != I2C_IDLE)
+        return;
+    c->i2c_state = I2C_CUSTOM;
+    i2c_send(c->base_addr, addr, data);
+    ulTaskNotifyTake(pdTRUE, 1000 / portTICK_PERIOD_MS);
+}
+
 // b = base_addr
-// Returns false on error
+// Returns true if a read or write has been started
 static bool setup_pcf_rw(unsigned b, t_pcf_state *pcf)
 {
     if (pcf->flags & FPCF_WENABLED){
@@ -193,13 +210,18 @@ void i2c_isr(t_i2cChannelState *state)
         case I2C_PCF:
             // Evaluate result of the single byte read or write
             pcf = &(state->pcf_state[state->currentPcf]);
-            pcf->value = HWREG(b + I2C_O_MDR);
-            if (pcf->value_target)
-                *(pcf->value_target) = HWREG(b + I2C_O_MDR);
             if (mcs & I2C_MCS_ERROR){
                 // Latch the error
                 pcf->last_err_mcs = mcs;
                 pcf->err_cnt++;
+                // Disable PCF when there's too many errors
+                if(pcf->err_cnt > PCF_ERR_CNT_DISABLE){
+                    pcf->flags = 0;
+                    pcf->err_cnt = 0;
+                }
+            } else if (pcf->value_target && (pcf->flags & FPCF_RENABLED)){
+                // pcf->value = HWREG(b + I2C_O_MDR);
+                *(pcf->value_target) = HWREG(b + I2C_O_MDR);
             }
             // Setup next read or write
             do {
@@ -212,8 +234,13 @@ void i2c_isr(t_i2cChannelState *state)
             } while (!setup_pcf_rw(b, ++pcf));
             break;
 
+        case I2C_CUSTOM:
+            state->i2c_state = I2C_IDLE;
+            vTaskNotifyGiveFromISR(hPcfInReader, &xHigherPriorityTaskWoken);
+            break;
+
         case I2C_IDLE:
-            UARTprintf(" I ", state->i2c_state);
+            UARTprintf(" I ");
             break;
 
         default:
@@ -223,11 +250,14 @@ void i2c_isr(t_i2cChannelState *state)
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-void init_i2c_system() {
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOB );   //I2C0
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOA );   //I2C1
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOE );   //I2C2
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_GPIOD );   //I2C3
+// Resets GPIO and I2C hardware
+// isr_init = false: also send 0x00 to all PCFs
+// isr_init = true:  also init data structures and interrupts
+void init_i2c_system(bool isr_init) {
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);   //I2C0
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);   //I2C1
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);   //I2C2
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);   //I2C3
 
     //--------------------------
     // Unstuck I2C SDA lines
@@ -241,51 +271,66 @@ void init_i2c_system() {
     //  Set up the i2c masters
     //--------------------------
     // The I2C7 peripheral must be enabled before use.
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_I2C0 );
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_I2C1 );
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_I2C2 );
-    ROM_SysCtlPeripheralEnable( SYSCTL_PERIPH_I2C3 );
-    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C0 );
-    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C1 );
-    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C2 );
-    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C3 );
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_I2C0);
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_I2C1);
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_I2C2);
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_I2C3);
+    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C0);
+    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C1);
+    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C2);
+    ROM_SysCtlPeripheralReset( SYSCTL_PERIPH_I2C3);
 
     // Configure the pin muxing for I2C0 functions on port D0 and D1.
     // This step is not necessary if your part does not support pin muxing.
-    ROM_GPIOPinConfigure( GPIO_PB2_I2C0SCL );            //I2C0
-    ROM_GPIOPinConfigure( GPIO_PB3_I2C0SDA );
-    ROM_GPIOPinConfigure( GPIO_PA6_I2C1SCL );            //I2C1
-    ROM_GPIOPinConfigure( GPIO_PA7_I2C1SDA );
-    ROM_GPIOPinConfigure( GPIO_PE4_I2C2SCL );            //I2C2
-    ROM_GPIOPinConfigure( GPIO_PE5_I2C2SDA );
-    ROM_GPIOPinConfigure( GPIO_PD0_I2C3SCL );            //I2C3
-    ROM_GPIOPinConfigure( GPIO_PD1_I2C3SDA );
+    ROM_GPIOPinConfigure(GPIO_PB2_I2C0SCL);            //I2C0
+    ROM_GPIOPinConfigure(GPIO_PB3_I2C0SDA);
+    ROM_GPIOPinConfigure(GPIO_PA6_I2C1SCL);            //I2C1
+    ROM_GPIOPinConfigure(GPIO_PA7_I2C1SDA);
+    ROM_GPIOPinConfigure(GPIO_PE4_I2C2SCL);            //I2C2
+    ROM_GPIOPinConfigure(GPIO_PE5_I2C2SDA);
+    ROM_GPIOPinConfigure(GPIO_PD0_I2C3SCL);            //I2C3
+    ROM_GPIOPinConfigure(GPIO_PD1_I2C3SDA);
 
     // Select the I2C function for these pins.  This function will also
     // configure the GPIO pins for I2C operation, setting them to
     // open-drain operation with weak pull-ups.  Consult the data sheet
     // to see which functions are allocated per pin.
-    ROM_GPIOPinTypeI2CSCL( GPIO_PORTB_BASE, GPIO_PIN_2); //I2C0
-    ROM_GPIOPinTypeI2C(    GPIO_PORTB_BASE, GPIO_PIN_3);
-    ROM_GPIOPinTypeI2CSCL( GPIO_PORTA_BASE, GPIO_PIN_6); //I2C1
-    ROM_GPIOPinTypeI2C(    GPIO_PORTA_BASE, GPIO_PIN_7);
-    ROM_GPIOPinTypeI2CSCL( GPIO_PORTE_BASE, GPIO_PIN_4); //I2C2
-    ROM_GPIOPinTypeI2C(    GPIO_PORTE_BASE, GPIO_PIN_5);
-    ROM_GPIOPinTypeI2CSCL( GPIO_PORTD_BASE, GPIO_PIN_0); //I2C3
-    ROM_GPIOPinTypeI2C(    GPIO_PORTD_BASE, GPIO_PIN_1);
+    ROM_GPIOPinTypeI2CSCL(GPIO_PORTB_BASE, GPIO_PIN_2); //I2C0
+    ROM_GPIOPinTypeI2C(   GPIO_PORTB_BASE, GPIO_PIN_3);
+    ROM_GPIOPinTypeI2CSCL(GPIO_PORTA_BASE, GPIO_PIN_6); //I2C1
+    ROM_GPIOPinTypeI2C(   GPIO_PORTA_BASE, GPIO_PIN_7);
+    ROM_GPIOPinTypeI2CSCL(GPIO_PORTE_BASE, GPIO_PIN_4); //I2C2
+    ROM_GPIOPinTypeI2C(   GPIO_PORTE_BASE, GPIO_PIN_5);
+    ROM_GPIOPinTypeI2CSCL(GPIO_PORTD_BASE, GPIO_PIN_0); //I2C3
+    ROM_GPIOPinTypeI2C(   GPIO_PORTD_BASE, GPIO_PIN_1);
 
-    // Initialize I2C0 peripheral driver.
-    i2c_state_init(&g_sI2CInst[0], I2C0_BASE, INT_I2C0);
-    i2c_state_init(&g_sI2CInst[1], I2C1_BASE, INT_I2C1);
-    i2c_state_init(&g_sI2CInst[2], I2C2_BASE, INT_I2C2);
-    i2c_state_init(&g_sI2CInst[3], I2C3_BASE, INT_I2C3);
+    // Initialize the I2C master module for 400 kHz
+    ROM_I2CMasterInitExpClk(I2C0_BASE, SYSTEM_CLOCK, true);
+    ROM_I2CMasterInitExpClk(I2C1_BASE, SYSTEM_CLOCK, true);
+    ROM_I2CMasterInitExpClk(I2C2_BASE, SYSTEM_CLOCK, true);
+    ROM_I2CMasterInitExpClk(I2C3_BASE, SYSTEM_CLOCK, true);
 
-    // Set destination pointers
-    for (unsigned c=0; c<4; c++){
+    if (isr_init){
+        // Initialize I2C0 peripheral driver.
+        i2c_state_init(&g_sI2CInst[0], I2C0_BASE, INT_I2C0);
+        i2c_state_init(&g_sI2CInst[1], I2C1_BASE, INT_I2C1);
+        i2c_state_init(&g_sI2CInst[2], I2C2_BASE, INT_I2C2);
+        i2c_state_init(&g_sI2CInst[3], I2C3_BASE, INT_I2C3);
+
+        // Set destination pointers
+        for (unsigned c=0; c<4; c++){
+            for (unsigned p=0; p<PCF_MAX_PER_CHANNEL; p++){
+                // Ready for some sick pointer acrobatics?
+                g_sI2CInst[c].pcf_state[p].value_target =
+                &g_SwitchStateSampled.switchState.i2cReadData[c][p];
+            }
+        }
+    } else {
         for (unsigned p=0; p<PCF_MAX_PER_CHANNEL; p++){
-            // Ready for some sick pointer acrobatics?
-            g_sI2CInst[c].pcf_state[p].value_target =
-            &g_SwitchStateSampled.switchState.i2cReadData[c][p];
+            i2c_send(I2C0_BASE, 0x20+p, 0x00);
+            i2c_send(I2C1_BASE, 0x20+p, 0x00);
+            i2c_send(I2C2_BASE, 0x20+p, 0x00);
+            i2c_send(I2C3_BASE, 0x20+p, 0x00);
         }
     }
 }
@@ -295,6 +340,7 @@ void trigger_i2c_cycle()
 {
     static unsigned nCalls = 0;
     nCalls++;
+    // Cycle through the bcm_buffer in a binary way
     if (nCalls >= (1<<g_bcmIndex)) {
         nCalls = 0;
         g_bcmIndex++;
@@ -303,7 +349,7 @@ void trigger_i2c_cycle()
         }
     }
     // UARTprintf("%x ", g_bcmIndex);
-    // The whole sequence takes < 0.5 us
+    // The whole i2c read sequence takes < 0.5 us
     for (unsigned i=0; i<=3; i++){
         t_i2cChannelState *s = &g_sI2CInst[i];
         s->i2c_state = I2C_START;
@@ -314,21 +360,31 @@ void trigger_i2c_cycle()
 
 void print_pcf_state()
 {
-    UARTprintf("\n");
+    UARTprintf("  R/W[I2C_ADDR]: VAL (ERR_CNT)\n");
     for(unsigned pcf=0; pcf<=7; pcf++){
         for(unsigned ch=0; ch<=3; ch++){
             t_i2cChannelState *chp = &(g_sI2CInst[ch]);
             t_pcf_state *pcfp = &(chp->pcf_state[pcf]);
-            char op = (pcfp->flags & FPCF_WENABLED) ? 'W' :
-                      (pcfp->flags & FPCF_RENABLED) ? 'R' : ' ';
-            UARTprintf(
-                "  %c[%2x]: %2x %5x  ",
-                op,
-                pcfp->i2c_addr,
-                pcfp->value,
-                // *(pcfp->value_target),
-                pcfp->err_cnt
-            );
+            if (pcfp->flags & FPCF_WENABLED){
+                UARTprintf(
+                    "  W[%2x]:    (%5x)  ",
+                    pcfp->i2c_addr,
+                    pcfp->err_cnt
+                );
+            } else if (pcfp->flags & FPCF_RENABLED) {
+                UARTprintf(
+                    "  R[%2x]: %2x (%5x)  ",
+                    pcfp->i2c_addr,
+                    // pcfp->value,
+                    *pcfp->value_target,
+                    pcfp->err_cnt
+                );
+            } else {
+                UARTprintf(
+                    "   [%2x]:             ",
+                    pcfp->i2c_addr
+                );
+            }
         }
         UARTprintf("\n");
     }

@@ -212,27 +212,23 @@ void setPwm( uint8_t channel, uint16_t pwmValue ){
 // Main function
 //-------------------------------------------------------------------------
 int main(void) {
-    // uint8_t z=0; //i=0, j=0;
-    // Set the clocking to run at 80 MHz from the PLL.
-    ROM_SysCtlClockSet( SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ | SYSCTL_OSC_MAIN );
-    initGpio();         //Init GPIO pins
-    configureTimer();   //Init debugh HW timer for measuring processor cycles (%timeit)
-    // initMyI2C();        //Init the 4 I2C hardware channels
-    //  -------------------------------------------------------
-    //   Init all PCFs to output low
-    //   This is to protect any Relais conected to PCF outputs
-    //   The User has to set the pin high manually if it is
-    //   to be used as an input !
-    //  -------------------------------------------------------
-//    for (i=0; i<=3; i++) {            // For each I2C channel
-//        for (j=0x20; j<=0x27; j++) {  // For each PCFL I2C addr.
-//            ts_i2cTransfer(i, j, &z, 1, NULL, 0, NULL, NULL); //Send 0x00
-//        }
-//    }
-    //Send 0x00 to on-board PCF8574
-    // ts_i2cTransfer(0, 0x20, &z, 1, NULL, 0, NULL, NULL);
-    spiSetup();         //Init 3 SPI channels for setting ws2811 LEDs
-    initPWM();          //Init the 4 Hardware PWM output channels
+    // run at 80 MHz from the PLL
+    ROM_SysCtlClockSet(
+        SYSCTL_SYSDIV_2_5 |
+        SYSCTL_USE_PLL |
+        SYSCTL_XTAL_16MHZ |
+        SYSCTL_OSC_MAIN
+    );
+    initGpio();
+    UARTStdioConfig(0, 115200, SYSTEM_CLOCK);
+    // Write 0 to all PCFs (in case there is relays)
+    init_i2c_system(false);
+    // Init debug HW timer for measuring processor cycles (%timeit)
+    configureTimer();
+    // Init 3 SPI channels for setting ws2811 LEDs
+    spiSetup();
+    // Init the 4 high speed PWM output channels
+    initPWM();
     // Enable lazy stacking for interrupt handlers.  This allows floating-point
     // instructions to be used within interrupt handlers, but at the expense of
     // extra stack usage.

@@ -312,9 +312,14 @@ static void process_IO()
     }
     handleBitRules(DEBOUNCER_READ_PERIOD);
     processQuickRules();
-    if (g_reDiscover){
+    // These are blocking, no more than 8 single byte transactions here!
+    // TODO setup a Queue for simple I2C write commands
+    i2c_send_yield(1, 0x42, 0x85);
+    i2c_send_yield(3, 0x42, 0x86);
+    if (g_reDiscover) {
         g_reDiscover = 0;
-        init_i2c_system();
+        UARTprintf("done\n");
+        init_i2c_system(true);
     }
 }
 
@@ -332,7 +337,7 @@ void task_pcf_io(void *pvParameters)
         g_outWriterList[i].channel = C_INVALID;
     }
     vTaskDelay(1);
-    init_i2c_system();
+    init_i2c_system(true);
     vTaskDelay(1);
     // Get the initial state of all switches silently (without reporting Switch Events)
     trigger_i2c_cycle();

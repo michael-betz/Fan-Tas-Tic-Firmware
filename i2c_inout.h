@@ -11,6 +11,8 @@
 #define PCF_MAX_PER_CHANNEL 8
 // Lowest possible I2C Address of a PCF8574 IO extender (all address pins low)
 #define PCF_LOWEST_ADDR 0x20
+// PCF gets disabled after that many errors
+#define PCF_ERR_CNT_DISABLE 0xFFFFF
 
 //--------------
 // Custom types
@@ -20,7 +22,7 @@ typedef struct {
     uint8_t i2c_addr;
     // Values are read into this address
     uint8_t *value_target;
-    uint8_t value;
+    // uint8_t value;
     uint8_t last_err_mcs;
     unsigned err_cnt;
     // -------------------
@@ -45,10 +47,10 @@ typedef struct {
 } t_i2cCustom;
 
 typedef enum{
-    I2C_START,
-    I2C_PCF,
-    I2C_CUSTOM,
-    I2C_IDLE
+    I2C_START,  // start scanning
+    I2C_PCF,    // scan in progress, notify when done
+    I2C_CUSTOM, // notify immediately
+    I2C_IDLE    // does nothing (isr shouldn't be called)
 } t_i2cState;
 
 typedef struct {
@@ -65,7 +67,7 @@ typedef struct {
 // Functions
 //--------------
 // Inits I2C IOs, Hardware and data structures
-void init_i2c_system();
+void init_i2c_system(bool isr_init);
 // Shall be called every 1 ms to keep PCF transactions going
 void trigger_i2c_cycle();
 // Print table of state and error counts to UART
@@ -74,6 +76,10 @@ void print_pcf_state();
 t_pcf_state *get_pcf(t_hw_index *pin);
 // Update a bcm buffer with a new pwm value
 void setBcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue);
+// Send byte over i2c and block (no interrupts)
+void i2c_send(uint32_t b, uint8_t addr, uint8_t data);
+// Send byte over i2c and yield (isr & freeRTOS must be setup)
+void i2c_send_yield(uint8_t channel, uint8_t addr, uint8_t data);
 // i2c interrupt service routine
 void i2c_isr(t_i2cChannelState *state);
 // these just call i2c_isr with the right arg
