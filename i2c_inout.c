@@ -108,8 +108,8 @@ void setBcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue) {
 
 static void my_pcf_init(t_pcf_state *pcf)
 {
-    pcf->flags = FPCF_RENABLED;
-    pcf->last_err_mcs = 0;
+    pcf->flags = 0;//FPCF_RENABLED;
+    pcf->last_mcs = 0;
     pcf->err_cnt = 0;
     uint8_t *bcm = pcf->bcm_buffer;
     for(unsigned i=0; i<N_BIT_PWM; i++)
@@ -138,20 +138,31 @@ static void i2c_state_init(t_i2cChannelState *state, uint32_t base_addr, uint_fa
 void i2c_send(uint32_t b, uint8_t addr, uint8_t data)
 {
     while (HWREG(b + I2C_O_MCS) & I2C_MCS_BUSY);
-    HWREG(b + I2C_O_MSA) = (addr<<1) | 0;
+    HWREG(b + I2C_O_MSA) = (addr << 1) | 0;
     HWREG(b + I2C_O_MDR) = data;
     HWREG(b + I2C_O_MCS) = I2C_MCS_STOP | I2C_MCS_START | I2C_MCS_RUN;
+}
+
+// Wait for all bits to be set in notification value (and clear them)
+void wait_for_noti_bits(uint32_t bits)
+{
+    uint32_t noti_new, noti_ored = 0;
+    do {
+        xTaskNotifyWait(0, 0xFFFFFFFF, &noti_new, portMAX_DELAY); //1000 / portTICK_PERIOD_MS
+        noti_ored |= noti_new;
+    } while ((bits & noti_ored) != bits);
 }
 
 // Yield from the task until i2c transaction complete
 void i2c_send_yield(uint8_t channel, uint8_t addr, uint8_t data)
 {
+    if (channel > 3) return;
     t_i2cChannelState *c = &g_sI2CInst[channel];
     if (c->i2c_state != I2C_IDLE)
         return;
     c->i2c_state = I2C_CUSTOM;
     i2c_send(c->base_addr, addr, data);
-    ulTaskNotifyTake(pdTRUE, 1000 / portTICK_PERIOD_MS);
+    wait_for_noti_bits(1 << channel);
 }
 
 // b = base_addr
@@ -176,19 +187,44 @@ static bool setup_pcf_rw(unsigned b, t_pcf_state *pcf)
     return false;
 }
 
+// Get i2c channel from base_addr
+static unsigned _get_ch(unsigned b)
+{
+    return (b - I2C0_BASE) >> 12;
+}
+
+// Each I2C ISR has a channel number (0-3)
+// When the ISR is done, the pcfInReader task is notified
+// the bit corresponding to its CH# is set in the task noti. value
+// When all 4 bits are set, the task continues
+static void _isr_notify(t_i2cChannelState *state, BaseType_t *hpw)
+{
+    state->i2c_state = I2C_IDLE;
+    xTaskNotifyFromISR(
+        hPcfInReader,
+        1 << _get_ch(state->base_addr),
+        eSetBits,
+        hpw
+    );
+}
+
+
 void i2c_isr(t_i2cChannelState *state)
 {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    // true if we should return to a higher prio task
+    BaseType_t hpw = pdFALSE;
     unsigned b = state->base_addr;
     unsigned mcs = HWREG(b + I2C_O_MCS);
     t_pcf_state *pcf;
+    ledOut(1);
     ROM_I2CMasterIntClear(b);
-
-    // When the BUSY bit is set, the other status bits are not valid.
-    if (mcs & I2C_MCS_BUSY)
+    // When the BUSY bit is set, the other I2C status bits are not valid.
+    if (mcs & I2C_MCS_BUSY){
+        ledOut(0);
         return;
+    }
 
-    // UARTprintf(" !%x,%x! ", state->i2c_state, mcs);
+    // UARTprintf(" !%x:%x,%x! ", _get_ch(state->base_addr), state->i2c_state, mcs);
 
     switch(state->i2c_state){
         case I2C_START:
@@ -200,7 +236,8 @@ void i2c_isr(t_i2cChannelState *state)
             while(!setup_pcf_rw(b, pcf)){
                 state->currentPcf++;
                 if (state->currentPcf >= PCF_MAX_PER_CHANNEL){
-                    state->i2c_state = I2C_IDLE;
+                    // Nothing to do, notify PCF_Reader
+                    _isr_notify(state, &hpw);
                     break;
                 }
                 pcf++;
@@ -210,9 +247,8 @@ void i2c_isr(t_i2cChannelState *state)
         case I2C_PCF:
             // Evaluate result of the single byte read or write
             pcf = &(state->pcf_state[state->currentPcf]);
-            if (mcs & I2C_MCS_ERROR){
-                // Latch the error
-                pcf->last_err_mcs = mcs;
+            pcf->last_mcs = mcs;
+            if (mcs & I2C_MCS_ERROR) {
                 pcf->err_cnt++;
                 // Disable PCF when there's too many errors
                 if(pcf->err_cnt > PCF_ERR_CNT_DISABLE){
@@ -227,16 +263,14 @@ void i2c_isr(t_i2cChannelState *state)
             do {
                 state->currentPcf++;
                 if (state->currentPcf >= PCF_MAX_PER_CHANNEL){
-                    state->i2c_state = I2C_IDLE;
-                    vTaskNotifyGiveFromISR(hPcfInReader, &xHigherPriorityTaskWoken);
+                    _isr_notify(state, &hpw);
                     break;
                 }
             } while (!setup_pcf_rw(b, ++pcf));
             break;
 
         case I2C_CUSTOM:
-            state->i2c_state = I2C_IDLE;
-            vTaskNotifyGiveFromISR(hPcfInReader, &xHigherPriorityTaskWoken);
+            _isr_notify(state, &hpw);
             break;
 
         case I2C_IDLE:
@@ -247,7 +281,9 @@ void i2c_isr(t_i2cChannelState *state)
             UARTprintf(" ?%x? ", state->i2c_state);
             state->i2c_state = I2C_IDLE;
     }
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    ledOut(2);
+    portYIELD_FROM_ISR(hpw);
+    ledOut(0);
 }
 
 // Resets GPIO and I2C hardware
@@ -325,6 +361,9 @@ void init_i2c_system(bool isr_init) {
                 &g_SwitchStateSampled.switchState.i2cReadData[c][p];
             }
         }
+        // Only enable PCF
+        g_sI2CInst[0].pcf_state[0].flags = FPCF_RENABLED;
+        g_sI2CInst[0].pcf_state[1].flags = FPCF_RENABLED;
     } else {
         for (unsigned p=0; p<PCF_MAX_PER_CHANNEL; p++){
             i2c_send(I2C0_BASE, 0x20+p, 0x00);
@@ -339,6 +378,7 @@ void init_i2c_system(bool isr_init) {
 void trigger_i2c_cycle()
 {
     static unsigned nCalls = 0;
+    UARTprintf("T");
     nCalls++;
     // Cycle through the bcm_buffer in a binary way
     if (nCalls >= (1<<g_bcmIndex)) {
@@ -354,7 +394,6 @@ void trigger_i2c_cycle()
         t_i2cChannelState *s = &g_sI2CInst[i];
         s->i2c_state = I2C_START;
         IntTrigger(s->int_addr);
-        // break;
     }
 }
 
@@ -367,21 +406,22 @@ void print_pcf_state()
             t_pcf_state *pcfp = &(chp->pcf_state[pcf]);
             if (pcfp->flags & FPCF_WENABLED){
                 UARTprintf(
-                    "  W[%2x]:    (%5x)  ",
+                    "  W[%2x]:    (%5x)   ",
                     pcfp->i2c_addr,
                     pcfp->err_cnt
                 );
             } else if (pcfp->flags & FPCF_RENABLED) {
                 UARTprintf(
-                    "  R[%2x]: %2x (%5x)  ",
+                    "  R[%2x]: %2x (%2x,%5x)",
                     pcfp->i2c_addr,
                     // pcfp->value,
                     *pcfp->value_target,
+                    pcfp->last_mcs,
                     pcfp->err_cnt
                 );
             } else {
                 UARTprintf(
-                    "   [%2x]:             ",
+                    "   [%2x]:              ",
                     pcfp->i2c_addr
                 );
             }

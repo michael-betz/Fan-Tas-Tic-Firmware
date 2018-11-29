@@ -307,15 +307,12 @@ static void process_IO()
 // Run debounce algo (14 us)
     debounceAlgo(g_SwitchStateSampled.longValues, g_SwitchStateDebounced.longValues, g_SwitchStateToggled.longValues, g_SwitchStateNoDebounce.longValues);
     // Notify Mission pinball over serial port of all changed switches
-    if(g_reportSwitchEvents){
-       reportSwitchStates();
-    }
+    if (g_reportSwitchEvents) reportSwitchStates();
     handleBitRules(DEBOUNCER_READ_PERIOD);
     processQuickRules();
     // These are blocking, no more than 8 single byte transactions here!
     // TODO setup a Queue for simple I2C write commands
-    i2c_send_yield(1, 0x42, 0x85);
-    i2c_send_yield(3, 0x42, 0x86);
+    // i2c_send_yield(1, 0x42, 0x85);
     if (g_reDiscover) {
         g_reDiscover = 0;
         UARTprintf("done\n");
@@ -328,34 +325,36 @@ void task_pcf_io(void *pvParameters)
 //    Read the state of all switches every 1 ms
 //    Then we need to debounce each switch and send `state changed` events
     TickType_t xLastWakeTime;
+    unsigned i;
     // hPcfInReader = xTaskGetCurrentTaskHandle();
     UARTprintf("%22s: Started!\n", "taskPcfInReader()");
-    for (unsigned i=0; i<MAX_QUICK_RULES; i++) {
-        disableQuickRule(i);
-    }
-    for (unsigned i=0; i<OUT_WRITER_LIST_LEN; i++) {
-        g_outWriterList[i].channel = C_INVALID;
-    }
+    for (i=0; i<MAX_QUICK_RULES; i++) disableQuickRule(i);
+    for (i=0; i<OUT_WRITER_LIST_LEN; i++) g_outWriterList[i].channel = C_INVALID;
     vTaskDelay(1);
     init_i2c_system(true);
     vTaskDelay(1);
     // Get the initial state of all switches silently (without reporting Switch Events)
     trigger_i2c_cycle();
     readSwitchMatrix();
+    // Enable weak pullup on PCF0,1
     xLastWakeTime = xTaskGetTickCount();
+    i = 0;
     while (1) {
-        // Wait for i2c ISR notification
-        if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
-            process_IO();
-            // unsigned cycles = stopTimer(); UARTprintf("%d cycles, %d us\n", cycles, cycles * 1000ll * 1000 / SYSTEM_CLOCK);
-            //Run every 1 ms --> 4 ms debounce latency
-            vTaskDelayUntil(&xLastWakeTime, DEBOUNCER_READ_PERIOD);
-            // vTaskDelayUntil(&xLastWakeTime, 3000);
-            //Start background I2C scanner (takes ~ 400 us)
-            // startTimer();
-            trigger_i2c_cycle();
-            //Should take >= 500 us as it happens in parallel with the I2C scan
-            readSwitchMatrix();  // 32965 cycles, 412 us
-        }
+        // Wait for 4 x I2C ISR notification (bit 0 - 4 of notification value)
+        wait_for_noti_bits(0x0F);
+        process_IO();
+        i2c_send_yield(0, 0x20, 0xFF);
+        i2c_send_yield(0, 0x30, 0xFF);
+        // unsigned cycles = stopTimer(); UARTprintf("%d cycles, %d us\n", cycles, cycles * 1000ll * 1000 / SYSTEM_CLOCK);
+        //Run every 1 ms --> 4 ms debounce latency
+        // vTaskDelayUntil(&xLastWakeTime, DEBOUNCER_READ_PERIOD);
+        UARTprintf("\n");
+        vTaskDelayUntil(&xLastWakeTime, 3000);
+        //Start background I2C scanner (takes ~ 400 us)
+        // startTimer();
+        trigger_i2c_cycle();
+        //Should take >= 500 us as it happens in parallel with the I2C scan
+        // readSwitchMatrix();  // 32965 cycles, 412 us
+        i++;
     }
 }

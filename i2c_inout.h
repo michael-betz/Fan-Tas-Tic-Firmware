@@ -1,6 +1,7 @@
 #ifndef I2C_INOUT_H_
 #define I2C_INOUT_H_
 #include <stdint.h>
+#include <stdbool.h>
 
 //*****************************************************************************
 // Defines
@@ -23,7 +24,7 @@ typedef struct {
     // Values are read into this address
     uint8_t *value_target;
     // uint8_t value;
-    uint8_t last_err_mcs;
+    uint8_t last_mcs;
     unsigned err_cnt;
     // -------------------
     //  Only for outputs:
@@ -80,6 +81,8 @@ void setBcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue);
 void i2c_send(uint32_t b, uint8_t addr, uint8_t data);
 // Send byte over i2c and yield (isr & freeRTOS must be setup)
 void i2c_send_yield(uint8_t channel, uint8_t addr, uint8_t data);
+// Wait for all bits to be set in notification value (and clear them)
+void wait_for_noti_bits(uint32_t bits);
 // i2c interrupt service routine
 void i2c_isr(t_i2cChannelState *state);
 // these just call i2c_isr with the right arg

@@ -116,9 +116,9 @@ void taskDemoLED(void *pvParameters) {
     unsigned i=0;
     while (1) {
         // Turn on LED 1
-        ledOut( i++ );
-        vTaskDelay(2);
-        ledOut( 0 );
+        // ledOut( i++ );
+        // vTaskDelay(2);
+        // ledOut( 0 );
         vTaskDelay(1000);
     }
 }
