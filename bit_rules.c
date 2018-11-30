@@ -227,6 +227,7 @@ static void fillBitRule(t_hw_index *pin, t_PCLOutputByte *w, int16_t tPulse, uin
     // Fill the output pulse state `b`
     t_BitModifyRules *b = &(w->bitRules[pin->pinIndex]);
     b->tPulse = tPulse;
+    b->highPWM = highPower;
     b->lowPWM = lowPower;
     if (pin->channel == C_FAST_PWM) {
         setPwm(pin->pinIndex, highPower);
@@ -253,14 +254,14 @@ void setPCFOutput(t_hw_index *pin, int16_t tPulse, uint16_t highPower, uint16_t 
             fillBitRule(pin, w, tPulse, highPower, lowPower);
             // Mark the item as valid to the output routine
             w->channel = pin->channel;
-            UARTprintf("%22s: wrote to g_outWriterList[%d] (new)\n", "setPclOutput()", i);
+            // UARTprintf("%22s: wrote to g_outWriterList[%d] (new)\n", "setPclOutput()", i);
             return;
         } else if (w->channel == pin->channel) {
             if (pin->channel == C_FAST_PWM ||
                 (w->pcf && w->pcf->i2c_addr == pin->i2c_addr)) {
                 // Found the right byte, change it
                 fillBitRule(pin, w, tPulse, highPower, lowPower);
-                UARTprintf("%22s: wrote to g_outWriterList[%d]\n", "setPclOutput()", i);
+                // UARTprintf("%22s: wrote to g_outWriterList[%d]\n", "setPclOutput()", i);
                 return;
             }
         }
@@ -269,6 +270,31 @@ void setPCFOutput(t_hw_index *pin, int16_t tPulse, uint16_t highPower, uint16_t 
     // Error, no more space in outList :(
     UARTprintf("%22s: Error, no more space in g_outWriterList :(\n", "setPclOutput()");
     REPORT_ERROR("ER:0004\n");
+}
+
+void print_out_writer_list()
+{
+    UARTprintf("index: [ch,addr] lowPWM_tPulse_highPWM\n");
+    t_PCLOutputByte *w = g_outWriterList;
+    for (unsigned i=0; i<OUT_WRITER_LIST_LEN; i++) {
+        if (w->channel == C_INVALID) continue;
+        UARTprintf("%2x: [%x", i, w->channel);
+        if (w->pcf) {
+            UARTprintf(",%2x]", w->pcf->i2c_addr);
+        } else {
+            UARTprintf("]   ");
+        }
+        for (unsigned b=0; b<=7; b++){
+            UARTprintf(
+                "   %x_%x_%x",
+                w->bitRules[b].lowPWM,
+                w->bitRules[b].tPulse,
+                w->bitRules[b].highPWM
+            );
+        }
+        UARTprintf("\n");
+        w++;
+    }
 }
 
 static void handleBitRules(unsigned dt) {
@@ -304,19 +330,28 @@ static void handleBitRules(unsigned dt) {
 // Called every 1 ms (hopefully) after new states have been read
 static void process_IO()
 {
-// Run debounce algo (14 us)
-    debounceAlgo(g_SwitchStateSampled.longValues, g_SwitchStateDebounced.longValues, g_SwitchStateToggled.longValues, g_SwitchStateNoDebounce.longValues);
+    static unsigned i=0;
+    // Run debounce algo (14 us)
+    debounceAlgo(
+        g_SwitchStateSampled.longValues,
+        g_SwitchStateDebounced.longValues,
+        g_SwitchStateToggled.longValues,
+        g_SwitchStateNoDebounce.longValues
+    );
     // Notify Mission pinball over serial port of all changed switches
     if (g_reportSwitchEvents) reportSwitchStates();
     handleBitRules(DEBOUNCER_READ_PERIOD);
     processQuickRules();
-    // These are blocking, no more than 8 single byte transactions here!
+    // These are task suspending,
+    // no more than 8 single byte transactions here or 1 ms cycle timing suffers!
     // TODO setup a Queue for simple I2C write commands
     // i2c_send_yield(1, 0x42, 0x85);
+    // i2c_send_yield(0, 0x21, i);
+    // i2c_send_yield(0, 0x22, i++);
     if (g_reDiscover) {
         g_reDiscover = 0;
-        UARTprintf("done\n");
         init_i2c_system(true);
+        UARTprintf("done\n");
     }
 }
 
@@ -343,18 +378,15 @@ void task_pcf_io(void *pvParameters)
         // Wait for 4 x I2C ISR notification (bit 0 - 4 of notification value)
         wait_for_noti_bits(0x0F);
         process_IO();
-        i2c_send_yield(0, 0x20, 0xFF);
-        i2c_send_yield(0, 0x30, 0xFF);
         // unsigned cycles = stopTimer(); UARTprintf("%d cycles, %d us\n", cycles, cycles * 1000ll * 1000 / SYSTEM_CLOCK);
         //Run every 1 ms --> 4 ms debounce latency
-        // vTaskDelayUntil(&xLastWakeTime, DEBOUNCER_READ_PERIOD);
-        UARTprintf("\n");
-        vTaskDelayUntil(&xLastWakeTime, 3000);
+        vTaskDelayUntil(&xLastWakeTime, DEBOUNCER_READ_PERIOD);
+        // vTaskDelayUntil(&xLastWakeTime, 3000);
         //Start background I2C scanner (takes ~ 400 us)
         // startTimer();
         trigger_i2c_cycle();
         //Should take >= 500 us as it happens in parallel with the I2C scan
-        // readSwitchMatrix();  // 32965 cycles, 412 us
+        readSwitchMatrix();  // 32965 cycles, 412 us
         i++;
     }
 }

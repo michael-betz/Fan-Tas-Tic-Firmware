@@ -29,6 +29,7 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "event_groups.h"
 
 #include "my_uartstdio.h"
 #include "main.h"
@@ -36,12 +37,16 @@
 #include "switch_matrix.h"
 #include "bit_rules.h"
 
+
 // Four TI I2C driver instances for 4 I2C channels
 t_i2cChannelState g_sI2CInst[4];
 
 // current bcmBuffer index for all PCF outputs,
 // set by trigger_i2c_cycle()
 static unsigned g_bcmIndex = 0;
+
+// To wait for all channels to finish
+// static EventGroupHandle_t i2c_flags = NULL;
 
 void i2CIntHandler0(void) {
     i2c_isr(&g_sI2CInst[0]);
@@ -97,10 +102,9 @@ t_pcf_state *get_pcf(t_hw_index *pin)
 void setBcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue) {
     // Pre calculate and SET the values which need to be output on a pin to get
     // Binary Code Modulation (BCM) with a certain power level.
-    uint8_t j;
     taskENTER_CRITICAL();
-    for (j = 0; j < N_BIT_PWM; j++) {
-        HWREGBITB( bcmBuffer, pin ) = HWREGBITB(&pwmValue, j);
+    for (unsigned j=0; j < N_BIT_PWM; j++) {
+        HWREGBITB(bcmBuffer, pin) = HWREGBITB(&pwmValue, j);
         bcmBuffer++;
     }
     taskEXIT_CRITICAL();
@@ -108,7 +112,7 @@ void setBcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue) {
 
 static void my_pcf_init(t_pcf_state *pcf)
 {
-    pcf->flags = 0;//FPCF_RENABLED;
+    pcf->flags = FPCF_RENABLED;
     pcf->last_mcs = 0;
     pcf->err_cnt = 0;
     uint8_t *bcm = pcf->bcm_buffer;
@@ -151,6 +155,13 @@ void wait_for_noti_bits(uint32_t bits)
         xTaskNotifyWait(0, 0xFFFFFFFF, &noti_new, portMAX_DELAY); //1000 / portTICK_PERIOD_MS
         noti_ored |= noti_new;
     } while ((bits & noti_ored) != bits);
+    // xEventGroupWaitBits(
+    //     i2c_flags,
+    //     bits,
+    //     pdTRUE,
+    //     pdTRUE,
+    //     portMAX_DELAY
+    // );
 }
 
 // Yield from the task until i2c transaction complete
@@ -206,8 +217,12 @@ static void _isr_notify(t_i2cChannelState *state, BaseType_t *hpw)
         eSetBits,
         hpw
     );
+    // xEventGroupSetBitsFromISR(
+    //     i2c_flags,
+    //     1 << _get_ch(state->base_addr),
+    //     hpw
+    // );
 }
-
 
 void i2c_isr(t_i2cChannelState *state)
 {
@@ -216,21 +231,21 @@ void i2c_isr(t_i2cChannelState *state)
     unsigned b = state->base_addr;
     unsigned mcs = HWREG(b + I2C_O_MCS);
     t_pcf_state *pcf;
-    ledOut(1);
     ROM_I2CMasterIntClear(b);
     // When the BUSY bit is set, the other I2C status bits are not valid.
     if (mcs & I2C_MCS_BUSY){
-        ledOut(0);
         return;
     }
 
     // UARTprintf(" !%x:%x,%x! ", _get_ch(state->base_addr), state->i2c_state, mcs);
+    // UARTprintf("!%x!", HWREG(b + I2C_O_MRIS));
 
     switch(state->i2c_state){
         case I2C_START:
+            ledOut(1);
             // Start a single byte read
             state->currentPcf = 0;
-            pcf = &(state->pcf_state[state->currentPcf]);
+            pcf = state->pcf_state;
             state->i2c_state = I2C_PCF;
             // Setup first read or write
             while(!setup_pcf_rw(b, pcf)){
@@ -245,10 +260,12 @@ void i2c_isr(t_i2cChannelState *state)
             break;
 
         case I2C_PCF:
+            ledOut(2);
             // Evaluate result of the single byte read or write
             pcf = &(state->pcf_state[state->currentPcf]);
             pcf->last_mcs = mcs;
-            if (mcs & I2C_MCS_ERROR) {
+            // Errata I2C#07: DATACK bit is not cleared on read!
+            if (mcs & (I2C_MCS_ADRACK | I2C_MCS_ARBLST)) {
                 pcf->err_cnt++;
                 // Disable PCF when there's too many errors
                 if(pcf->err_cnt > PCF_ERR_CNT_DISABLE){
@@ -270,6 +287,7 @@ void i2c_isr(t_i2cChannelState *state)
             break;
 
         case I2C_CUSTOM:
+            ledOut(3);
             _isr_notify(state, &hpw);
             break;
 
@@ -281,7 +299,6 @@ void i2c_isr(t_i2cChannelState *state)
             UARTprintf(" ?%x? ", state->i2c_state);
             state->i2c_state = I2C_IDLE;
     }
-    ledOut(2);
     portYIELD_FROM_ISR(hpw);
     ledOut(0);
 }
@@ -290,6 +307,11 @@ void i2c_isr(t_i2cChannelState *state)
 // isr_init = false: also send 0x00 to all PCFs
 // isr_init = true:  also init data structures and interrupts
 void init_i2c_system(bool isr_init) {
+    // using multiple task notifications turned out to be
+    // significantly faster than eventgroups
+    // if (!i2c_flags) {
+    //     i2c_flags = xEventGroupCreate();
+    // }
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);   //I2C0
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);   //I2C1
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);   //I2C2
@@ -340,6 +362,11 @@ void init_i2c_system(bool isr_init) {
     ROM_GPIOPinTypeI2CSCL(GPIO_PORTD_BASE, GPIO_PIN_0); //I2C3
     ROM_GPIOPinTypeI2C(   GPIO_PORTD_BASE, GPIO_PIN_1);
 
+    ROM_I2CMasterIntDisableEx(I2C0_BASE, I2C_MASTER_INT_DATA);
+    ROM_I2CMasterIntDisableEx(I2C1_BASE, I2C_MASTER_INT_DATA);
+    ROM_I2CMasterIntDisableEx(I2C2_BASE, I2C_MASTER_INT_DATA);
+    ROM_I2CMasterIntDisableEx(I2C3_BASE, I2C_MASTER_INT_DATA);
+
     // Initialize the I2C master module for 400 kHz
     ROM_I2CMasterInitExpClk(I2C0_BASE, SYSTEM_CLOCK, true);
     ROM_I2CMasterInitExpClk(I2C1_BASE, SYSTEM_CLOCK, true);
@@ -361,9 +388,9 @@ void init_i2c_system(bool isr_init) {
                 &g_SwitchStateSampled.switchState.i2cReadData[c][p];
             }
         }
-        // Only enable PCF
-        g_sI2CInst[0].pcf_state[0].flags = FPCF_RENABLED;
-        g_sI2CInst[0].pcf_state[1].flags = FPCF_RENABLED;
+        // Only enable some PCF
+        // g_sI2CInst[0].pcf_state[0].flags = FPCF_RENABLED;
+        // g_sI2CInst[0].pcf_state[1].flags = FPCF_RENABLED;
     } else {
         for (unsigned p=0; p<PCF_MAX_PER_CHANNEL; p++){
             i2c_send(I2C0_BASE, 0x20+p, 0x00);
@@ -378,7 +405,6 @@ void init_i2c_system(bool isr_init) {
 void trigger_i2c_cycle()
 {
     static unsigned nCalls = 0;
-    UARTprintf("T");
     nCalls++;
     // Cycle through the bcm_buffer in a binary way
     if (nCalls >= (1<<g_bcmIndex)) {
@@ -406,17 +432,17 @@ void print_pcf_state()
             t_pcf_state *pcfp = &(chp->pcf_state[pcf]);
             if (pcfp->flags & FPCF_WENABLED){
                 UARTprintf(
-                    "  W[%2x]:    (%5x)   ",
+                    "  W[%2x]:    (%5x)",
                     pcfp->i2c_addr,
                     pcfp->err_cnt
                 );
             } else if (pcfp->flags & FPCF_RENABLED) {
                 UARTprintf(
-                    "  R[%2x]: %2x (%2x,%5x)",
+                    "  R[%2x]: %2x (%5x)",
                     pcfp->i2c_addr,
                     // pcfp->value,
                     *pcfp->value_target,
-                    pcfp->last_mcs,
+                    // pcfp->last_mcs,
                     pcfp->err_cnt
                 );
             } else {

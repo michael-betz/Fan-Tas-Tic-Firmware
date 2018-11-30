@@ -13,7 +13,7 @@
 // Lowest possible I2C Address of a PCF8574 IO extender (all address pins low)
 #define PCF_LOWEST_ADDR 0x20
 // PCF gets disabled after that many errors
-#define PCF_ERR_CNT_DISABLE 0xFFFFF
+#define PCF_ERR_CNT_DISABLE 0x1FFFF
 
 //--------------
 // Custom types

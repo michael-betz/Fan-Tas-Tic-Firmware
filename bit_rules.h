@@ -56,6 +56,7 @@ typedef struct {
 // State of a pulsed solenoid driver output pin
 typedef struct {
     int16_t tPulse;                 // Countdown counter, How long does the `high` pulse last [ms], -1 = invalid rule
+    uint16_t highPWM;               // PWM value after trigger
     uint16_t lowPWM;                // PWM value after tPulse      (max. resolution is defined by N_BIT_PWM)
 } t_BitModifyRules;
 
@@ -101,9 +102,13 @@ extern bool g_reDiscover;
 //    lowPower  = PWM value after  the pulse
 void setPCFOutput(t_hw_index *pin, int16_t tPulse, uint16_t highPower, uint16_t lowPower);
 
+// Print active entries of out_writer_list to UART
+void print_out_writer_list();
+
 // Decode a hwIndex and fill the t_hw_index structure with details
 // asInput: is this supposed to be an input (1) or output (0)
 t_hw_index decodeHwIndex(uint16_t hwIndex, bool asInput);
+
 
 void setupQuickRule(uint8_t id, t_hw_index inputSwitchId,
         t_hw_index outputDriverId, uint16_t triggerHoldOffTime,

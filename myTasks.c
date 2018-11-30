@@ -69,6 +69,7 @@ tCmdLineEntry g_psCmdTable[] = {
         { "*IDN?", Cmd_IDN,  ": Display ID and version info" },
         { "IL",    Cmd_IL,   ": I2C: List status of GPIO expanders"},
         { "IR",    Cmd_IR,   ": I2C: Reset I2C system"},
+        { "OL",    Cmd_OL,   ": I2C: List output writers"},
         { "SWE",   Cmd_SWE,  ": <OnOff> En./Dis. reporting of switch events" },
         { "DEB",   Cmd_DEB,  ": <hwIndex> <OnOff> En./Dis. 12 ms debouncing" },
         { "SW?",   Cmd_SW,   ": Return the state of ALL switches (40 bytes)" },
@@ -322,6 +323,11 @@ int Cmd_IDN(int argc, char *argv[]) {
     return 0;
 }
 
+int Cmd_OL(int argc, char *argv[]){
+    print_out_writer_list();
+    return 0;
+}
+
 int Cmd_IL(int argc, char *argv[]){
     print_pcf_state();
     return 0;
@@ -331,7 +337,7 @@ int Cmd_IR(int argc, char *argv[]){
     UARTprintf("Reseting I2C system ... ");
     g_reDiscover = 1;
     // task might be blocked (no pullups?) ...
-    xTaskNotifyGive(hPcfInReader);
+    xTaskNotify(hPcfInReader, 0x0F, eSetBits);
     return 0;
 }
 
