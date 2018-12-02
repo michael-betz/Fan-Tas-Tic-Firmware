@@ -90,9 +90,10 @@ void vApplicationMallocFailedHook( void ){
     configASSERT(0);
 }
 
-void ledOut( uint8_t ledVal ){
+void ledOut(uint8_t ledVal){
     // 0 = off, 1 = blue, 2 = green, 3 = blue & green
-    ROM_GPIOPinWrite( GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2, ledVal<<2 );
+    // red led shared with spi bus!
+    ROM_GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2, ledVal<<2);
 }
 
 //-------------------------------------------------------------------------
@@ -112,10 +113,10 @@ void initGpio(){
     HWREG(GPIO_PORTD_BASE + GPIO_O_DEN) |= 0x80;
     HWREG(GPIO_PORTD_BASE + GPIO_O_LOCK) = 0;
     // Configure Switch matrix inputs
-    ROM_GPIOPinTypeGPIOInput( GPIO_PORTE_BASE, GPIO_PIN_3 | GPIO_PIN_2 | GPIO_PIN_1 );
-    ROM_GPIOPinTypeGPIOInput( GPIO_PORTC_BASE, GPIO_PIN_7 | GPIO_PIN_6 );
-    ROM_GPIOPinTypeGPIOInput( GPIO_PORTD_BASE, GPIO_PIN_7 | GPIO_PIN_6 );
-    ROM_GPIOPinTypeGPIOInput( GPIO_PORTF_BASE, GPIO_PIN_4 );
+    ROM_GPIOPinTypeGPIOInput(GPIO_PORTE_BASE, GPIO_PIN_3 | GPIO_PIN_2 | GPIO_PIN_1);
+    ROM_GPIOPinTypeGPIOInput(GPIO_PORTC_BASE, GPIO_PIN_7 | GPIO_PIN_6);
+    ROM_GPIOPinTypeGPIOInput(GPIO_PORTD_BASE, GPIO_PIN_7 | GPIO_PIN_6);
+    ROM_GPIOPinTypeGPIOInput(GPIO_PORTF_BASE, GPIO_PIN_4);
     // Configure GPIO Pins for UART mode (usb debug terminal).
     ROM_GPIOPinConfigure(GPIO_PA0_U0RX);
     ROM_GPIOPinConfigure(GPIO_PA1_U0TX);
@@ -123,8 +124,8 @@ void initGpio(){
     // Configure DEVICE USB pins
     ROM_GPIOPinTypeUSBAnalog(GPIO_PORTD_BASE, GPIO_PIN_5 | GPIO_PIN_4);
     // Init switch matrix shift register driving outputs
-    ROM_GPIODirModeSet( GPIO_PORTB_BASE, GPIO_PIN_1 | GPIO_PIN_0, GPIO_DIR_MODE_OUT);
-    ROM_GPIOPadConfigSet( GPIO_PORTB_BASE, GPIO_PIN_1 | GPIO_PIN_0, GPIO_STRENGTH_12MA, GPIO_PIN_TYPE_OD );
+    ROM_GPIODirModeSet(GPIO_PORTB_BASE, GPIO_PIN_1 | GPIO_PIN_0, GPIO_DIR_MODE_OUT);
+    ROM_GPIOPadConfigSet(GPIO_PORTB_BASE, GPIO_PIN_1 | GPIO_PIN_0, GPIO_STRENGTH_12MA, GPIO_PIN_TYPE_OD);
     // Enable the GPIO pins for the LED (green|blue|red).
     ROM_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2|GPIO_PIN_1);
     // Enable the GPIO pins for the 24V enbale (PE0).
@@ -270,11 +271,8 @@ int main(void) {
     // Blink LED
     xTaskCreate(taskDemoLED, (const portCHAR *)"LEDr", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
-    // Handle reading / writing all IOs
+    // Handle reading / writing I2C bus, fast PWM and switch matrix
     xTaskCreate(task_pcf_io, (const portCHAR *)"IO", 128, NULL, 1, &hPcfInReader);
-
-    // Report result of custom I2C transaction to commandline
-    // xTaskCreate(taskI2CCustomReporter, (const portCHAR *)"I2CcusRep", configMINIMAL_STACK_SIZE, NULL, 1, &hCustomI2cTask);
 
     // Create USB command parser task
     xTaskCreate(taskUsbCommandParser, (const portCHAR *)"Parser", 128, NULL, 1, &hUSBCommandParser);

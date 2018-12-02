@@ -51,14 +51,28 @@
 //*****************************************************************************
 // Global vars.
 //*****************************************************************************
-// Stuff for synchronizing TI I2C driver with freeRtos `do custom I2C transaction` task
-TaskHandle_t hCustomI2cTask = NULL;
-SemaphoreHandle_t g_SemaCustomI2C = NULL;
-uint16_t g_customI2CnBytesRx;
-uint8_t g_customI2CrxBuffer[CUSTOM_I2C_BUF_LEN];
-uint8_t g_customI2Cstate;
-uint8_t g_reportSwitchEvents = 0;
+bool g_reportSwitchEvents = 0;
 uint8_t g_errorBuffer[8];
+
+//-------------------
+// cmd line commands
+//-------------------
+int Cmd_help(int argc, char *argv[]);
+int Cmd_IDN(int argc, char *argv[]);
+int Cmd_IL(int argc, char *argv[]);
+int Cmd_OL(int argc, char *argv[]);
+int Cmd_IR(int argc, char *argv[]);
+int Cmd_SW(int argc, char *argv[]);
+int Cmd_SWE(int argc, char *argv[]);
+int Cmd_DEB(int argc, char *argv[]);
+int Cmd_SOE(int argc, char *argv[]);
+int Cmd_OUT(int argc, char *argv[]);
+int Cmd_RUL(int argc, char *argv[]);
+int Cmd_RULE(int argc, char *argv[]);
+int Cmd_LEC(int argc, char *argv[]);
+int Cmd_LED(int argc, char *argv[]);
+int Cmd_I2C(int argc, char *argv[]);
+int Cmd_HI(int argc, char *argv[]);
 
 //*****************************************************************************
 // Command parser
@@ -70,6 +84,7 @@ tCmdLineEntry g_psCmdTable[] = {
         { "IL",    Cmd_IL,   ": I2C: List status of GPIO expanders"},
         { "IR",    Cmd_IR,   ": I2C: Reset I2C system"},
         { "OL",    Cmd_OL,   ": I2C: List output writers"},
+        { "HI",    Cmd_HI,   ": <hwIndex> set all ports of PCF high (input mode)"},
         { "SWE",   Cmd_SWE,  ": <OnOff> En./Dis. reporting of switch events" },
         { "DEB",   Cmd_DEB,  ": <hwIndex> <OnOff> En./Dis. 12 ms debouncing" },
         { "SW?",   Cmd_SW,   ": Return the state of ALL switches (40 bytes)" },
@@ -79,7 +94,7 @@ tCmdLineEntry g_psCmdTable[] = {
         { "RULE",  Cmd_RULE, ": En./Dis a prev. def. rule: RULE <ID> <OnOff>" },
         { "LEC",   Cmd_LEC,  ": <channel> <spiSpeed [Hz]> [frameFmt]" },
         { "LED",   Cmd_LED,  ": <channel> <nBytes>\\n<binary blob of nBytes>" },
-        { "I2C",   Cmd_I2C,  ": <channel> <I2Caddr> <sendData> <nBytesRx>" },
+        { "I2C",   Cmd_I2C,  ": <channel> <I2Caddr> [hexSendData] <nBytesRx>" },
         { 0, 0, 0 } };
 
 
@@ -114,7 +129,7 @@ void taskDemoLED(void *pvParameters) {
     vTaskDelay( 1000 );
     UARTprintf("Press any key to enable debug messages ... ");
     globalDebugEnabled = 0; // Disables output to UART in ./utils/uartstdio.c
-    unsigned i=0;
+    // unsigned i=0;
     while (1) {
         // Turn on LED 1
         // ledOut( i++ );
@@ -655,95 +670,111 @@ uint8_t hexDigitToNibble( uint8_t hexChar ){
     return( 0 );
 }
 
-void taskI2CCustomReporter(void *pvParameters) {
-    // When a custom I2C transaction is finished, report the result to commandline
-    static uint8_t outBuffer[CUSTOM_I2C_BUF_LEN*2+5];
-    uint8_t *writePointer, *readPointer;
-    uint16_t i;
-    g_SemaCustomI2C = xSemaphoreCreateBinary();
-    xSemaphoreGive( g_SemaCustomI2C );
-    UARTprintf("%22s: %s", "taskI2CustomReporter()", "Started!\n");
-    while( 1 ){
-        if( ulTaskNotifyTake( pdTRUE, portMAX_DELAY) ) {    // Wait for notification of i2c transaction finished
-            writePointer = outBuffer;
-            readPointer = g_customI2CrxBuffer;
-            // Report result
-            writePointer += usprintf( (char*)writePointer, "I2C:" );
-            switch( g_customI2Cstate ){
-            case I2CM_STATUS_SUCCESS:
-                for( i=0; i<g_customI2CnBytesRx; i++ ){
-                    writePointer += usprintf( (char*)writePointer, "%02X", *readPointer++ );
-                }
-            break;
-            case I2CM_STATUS_ADDR_NACK:
-                writePointer += usprintf( (char*)writePointer, "I2CM_STATUS_ADDR_NACK" );
-            break;
-            case I2CM_STATUS_DATA_NACK:
-                writePointer += usprintf( (char*)writePointer, "I2CM_STATUS_DATA_NACK" );
-            break;
-            case I2CM_STATUS_ARB_LOST:
-                writePointer += usprintf( (char*)writePointer, "I2CM_STATUS_ARB_LOST" );
-            break;
-            case I2CM_STATUS_ERROR:
-                writePointer += usprintf( (char*)writePointer, "I2CM_STATUS_ERROR" );
-            break;
-            }
-            writePointer += usprintf( (char*)writePointer, "\n" );
-            ts_usbSend( outBuffer, ustrlen((char*)outBuffer) );
-            xSemaphoreGive( g_SemaCustomI2C ); // release the Binary Smeaphore to allow another custom I2C command
-        }
+// Takes a string, returns a buff. Make sure to free it after use.
+uint8_t *hexToBuff(char *str, unsigned *nWritten)
+{
+    uint8_t *p, *buff;
+    unsigned nBytesTx = ustrlen(str);      //argv[3] string contains hex characters [0FFEDEADBEEF]
+    if (nBytesTx % 2) {
+        UARTprintf("%22s: hex string must be even length\n", "hexToBuff()");
+        *nWritten = 0;
+        return NULL;
     }
+    nBytesTx /= 2;
+    buff = pvPortMalloc(nBytesTx);
+    if (!buff) {
+        UARTprintf("%22s: pvPortMalloc() failed\n", "hexToBuff()");
+        *nWritten = 0;
+        return NULL;
+    }
+    p = buff;
+    for(unsigned i=0; i<nBytesTx; i++) {
+        *p  = hexDigitToNibble(*str++) << 4;
+        *p |= hexDigitToNibble(*str++);
+        p++;
+    }
+    *nWritten = nBytesTx;
+    return buff;
 }
 
-void cmdI2CCallback(void* pvCallbackData, uint_fast8_t ui8Status){
-//   This is called from ISR context, so dont do anything ambitious here
-//   Notify taskI2CCustomReporter task to report results
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    g_customI2Cstate = ui8Status;
-    vTaskNotifyGiveFromISR( hCustomI2cTask, &xHigherPriorityTaskWoken );
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-}
-
+// Fills up a t_i2cCustom after sanity checking and puts it on the queue
 int Cmd_I2C(int argc, char *argv[]) {
-    // //I2C <channel> <I2Caddr> <sendData> <nBytesRx>
-    // static uint8_t txBuffer[CUSTOM_I2C_BUF_LEN];
-    // uint8_t channel, i2cAddr, *readPointer, *writePointer;
-    // uint16_t nBytesTx, temp;
-    // if ( argc == 5 ){
-    //     channel  = ustrtoul(argv[1], NULL, 0);
-    //     if ( channel > 3 ){
-    //         REPORT_ERROR( "ER:001E\n" );
-    //         UARTprintf("%22s: I2C Channel must be <= 4\n", "Cmd_I2C()");
-    //         return 0;
-    //     }
-    //     i2cAddr  = ustrtoul(argv[2], NULL, 0);
-    //     g_customI2CnBytesRx = ustrtoul(argv[4], NULL, 0);
-    //     nBytesTx = ustrlen( argv[3] )/2;      //argv[3] string contains hex characters [0FFEDEADBEEF]
-    //     writePointer = txBuffer;
-    //     readPointer = (uint8_t*)argv[3];
-    //     if( g_customI2CnBytesRx > CUSTOM_I2C_BUF_LEN ){
-    //         REPORT_ERROR( "ER:001F\n" );
-    //         UARTprintf("%22s: Too many bytes to receive: %d, max. %d\n", "Cmd_I2C()", g_customI2CnBytesRx, CUSTOM_I2C_BUF_LEN);
-    //         return 0;
-    //     }
-    //     if( nBytesTx > CUSTOM_I2C_BUF_LEN ){
-    //         REPORT_ERROR( "ER:0020\n" );
-    //         UARTprintf("%22s: Too many bytes to send: %d, max. %d\n", "Cmd_I2C()", nBytesTx, CUSTOM_I2C_BUF_LEN);
-    //         return 0;
-    //     }
-    //     for( temp=0; temp<nBytesTx; temp++ ){
-    //         *writePointer  = hexDigitToNibble( *readPointer++ )<<4;
-    //         *writePointer |= hexDigitToNibble( *readPointer++ );
-    //         writePointer++;
-    //     }
-    //     // Take the binary semaphore g_semaCustomI2C (released after reporting result on USB)
-    //     if( xSemaphoreTake( g_SemaCustomI2C, 3000 ) ){
-    //         ts_i2cTransfer( channel, i2cAddr, txBuffer, nBytesTx, g_customI2CrxBuffer, g_customI2CnBytesRx, cmdI2CCallback, NULL );
-    //     } else {
-    //         REPORT_ERROR( "ER:0020\n" );
-    //         UARTprintf("%22s: Timeout, could not acquire custom I2C Semaphore\n", "Cmd_I2C()");
-    //     }
-    //     return 0;
-    // }
+    //I2C <channel> <I2Caddr> [<sendData>] <nBytesRx>
+    t_i2cCustom i2c;
+    if (argc == 5 || argc == 4) {
+        i2c.channel = ustrtoul(argv[1], NULL, 0);
+        if (i2c.channel > 3) {
+            REPORT_ERROR("ER:001E\n");
+            UARTprintf("%22s: I2C Channel must be <= 4\n", "Cmd_I2C()");
+            return 0;
+        }
+        i2c.i2c_addr = ustrtoul(argv[2], NULL, 0);
+        if (i2c.i2c_addr > 127) {
+            REPORT_ERROR("ER:001E\n");
+            UARTprintf("%22s: I2Caddr must be <= 127\n", "Cmd_I2C()");
+            return 0;
+        }
+        i2c.readBuff = NULL;
+        if (argc == 4) {
+            i2c.nWrite = 0;
+            i2c.writeBuff = NULL;
+            i2c.nRead = ustrtoul(argv[3], NULL, 0);
+        } else {
+            i2c.writeBuff = hexToBuff(argv[3], (unsigned*)&i2c.nWrite);
+            if (!i2c.writeBuff) return 0;
+            i2c.nRead = ustrtoul(argv[4], NULL, 0);
+        }
+        UARTprintf(
+            "CH: %x, addr: %x, nRead: %x, nWrite: %x [",
+            i2c.channel,
+            i2c.i2c_addr,
+            i2c.nRead,
+            i2c.nWrite
+        );
+        for (unsigned i=0; i<i2c.nWrite; i++) {
+            UARTprintf("%02x ", i2c.writeBuff[i]);
+        }
+        UARTprintf("]\n");
+        if(!xQueueSendToBack(g_i2c_queue, &i2c, 100 / portTICK_PERIOD_MS)) {
+            UARTprintf("%22s: I2C queue full!\n", "Cmd_I2C()");
+            vPortFree(i2c.writeBuff); i2c.writeBuff = NULL;
+        }
+        return 0;
+    }
     return CMDLINE_TOO_FEW_ARGS;
+}
+
+int Cmd_HI(int argc, char *argv[]) {
+    // Writes a 0xFF to the relevant PCF to be used as input
+    // HI 0x123
+    t_i2cCustom i2c;
+    if(argc != 2) return CMDLINE_TOO_FEW_ARGS;
+    t_hw_index i = decodeHwIndex(ustrtoul(argv[1], NULL, 0), 1);
+    if (i.channel > 3) {
+        REPORT_ERROR("ER:001E\n");
+        UARTprintf("%22s: Not a I2C channel: %x\n", "Cmd_HI()", i.channel);
+        return 0;
+    }
+    if (i.i2c_addr > 0x27) {
+        REPORT_ERROR("ER:001E\n");
+        UARTprintf("%22s: Invalid i2c_addr: %x\n", "Cmd_HI()", i.i2c_addr);
+        return 0;
+    }
+    i2c.channel = i.channel;
+    i2c.i2c_addr = i.i2c_addr;
+    i2c.nWrite = 1;
+    i2c.nRead = 0;
+    i2c.readBuff = NULL;
+    i2c.writeBuff = pvPortMalloc(1);
+    if (!i2c.writeBuff) {
+        UARTprintf("%22s: pvPortMalloc() failed\n", "Cmd_HI()");
+        return 0;
+    }
+    *i2c.writeBuff = 0xFF;
+    UARTprintf("%22s: CH: %x, ADDR: %x gets high\n", "Cmd_HI()", i2c.channel, i2c.i2c_addr);
+    if(!xQueueSendToBack(g_i2c_queue, &i2c, 100 / portTICK_PERIOD_MS)) {
+        UARTprintf("%22s: I2C queue full!\n", "Cmd_HI()");
+        vPortFree(i2c.writeBuff); i2c.writeBuff = NULL;
+    }
+    return 0;
 }

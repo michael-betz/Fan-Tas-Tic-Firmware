@@ -22,7 +22,8 @@
 
 bool g_reDiscover = 0;
 TaskHandle_t hPcfInReader = NULL;
-
+// To queue up custom i2c transactions
+QueueHandle_t g_i2c_queue = NULL;
 // to keep track of the read input states
 t_switchStateConverter g_SwitchStateSampled;    //Read values of last I2C scan
 t_switchStateConverter g_SwitchStateNoDebounce; //Debouncing-OFF flags
@@ -227,14 +228,13 @@ static void fillBitRule(t_hw_index *pin, t_PCLOutputByte *w, int16_t tPulse, uin
     // Fill the output pulse state `b`
     t_BitModifyRules *b = &(w->bitRules[pin->pinIndex]);
     b->tPulse = tPulse;
-    b->highPWM = highPower;
     b->lowPWM = lowPower;
     if (pin->channel == C_FAST_PWM) {
         setPwm(pin->pinIndex, highPower);
         return;
     }
     if (w->pcf) {
-        setBcm(w->pcf->bcm_buffer, pin->pinIndex, highPower);
+        set_bcm(w->pcf->bcm_buffer, pin->pinIndex, highPower);
         w->pcf->flags |= FPCF_WENABLED;
         return;
     }
@@ -274,7 +274,7 @@ void setPCFOutput(t_hw_index *pin, int16_t tPulse, uint16_t highPower, uint16_t 
 
 void print_out_writer_list()
 {
-    UARTprintf("index: [ch,addr] lowPWM_tPulse_highPWM\n");
+    UARTprintf(" N: [CH,I2C] PWM0 PWM1 ...\n");
     t_PCLOutputByte *w = g_outWriterList;
     for (unsigned i=0; i<OUT_WRITER_LIST_LEN; i++) {
         if (w->channel == C_INVALID) continue;
@@ -284,14 +284,11 @@ void print_out_writer_list()
         } else {
             UARTprintf("]   ");
         }
-        for (unsigned b=0; b<=7; b++){
-            UARTprintf(
-                "   %x_%x_%x",
-                w->bitRules[b].lowPWM,
-                w->bitRules[b].tPulse,
-                w->bitRules[b].highPWM
-            );
-        }
+        for (unsigned p=0; p<=7; p++)
+            if(w->pcf)
+                UARTprintf("  %3x", get_bcm(w->pcf->bcm_buffer, p));
+            else
+                UARTprintf("  %3x", w->bitRules[p].lowPWM);
         UARTprintf("\n");
         w++;
     }
@@ -317,7 +314,7 @@ static void handleBitRules(unsigned dt) {
                         setPwm(j, bitRules->lowPWM);
                     } else if (w->pcf) {
                         // Apply the I2C pulse_low bcm pattern
-                        setBcm(w->pcf->bcm_buffer, j, bitRules->lowPWM );
+                        set_bcm(w->pcf->bcm_buffer, j, bitRules->lowPWM );
                     }
                 }
             }
@@ -327,10 +324,25 @@ static void handleBitRules(unsigned dt) {
     }
 }
 
+// TODO also handle reads (reply to usb) and multi-byte transfers
+static void handle_i2c_custom()
+{
+    t_i2cCustom i2c;
+    // Do up to 3 transactions per PCF cycle
+    for (unsigned i=0; i<3; i++){
+        if (!xQueueReceive(g_i2c_queue, &i2c, 0)) break;
+        if (i2c.nWrite == 1) {
+            i2c_send_yield(i2c.channel, i2c.i2c_addr, *i2c.writeBuff);
+        }
+        vPortFree(i2c.readBuff);  i2c.readBuff  = NULL;
+        vPortFree(i2c.writeBuff); i2c.writeBuff = NULL;
+    }
+}
+
 // Called every 1 ms (hopefully) after new states have been read
 static void process_IO()
 {
-    static unsigned i=0;
+    unsigned i;
     // Run debounce algo (14 us)
     debounceAlgo(
         g_SwitchStateSampled.longValues,
@@ -342,14 +354,11 @@ static void process_IO()
     if (g_reportSwitchEvents) reportSwitchStates();
     handleBitRules(DEBOUNCER_READ_PERIOD);
     processQuickRules();
-    // These are task suspending,
-    // no more than 8 single byte transactions here or 1 ms cycle timing suffers!
-    // TODO setup a Queue for simple I2C write commands
-    // i2c_send_yield(1, 0x42, 0x85);
-    // i2c_send_yield(0, 0x21, i);
-    // i2c_send_yield(0, 0x22, i++);
+    handle_i2c_custom();
     if (g_reDiscover) {
         g_reDiscover = 0;
+        for (i=0; i<MAX_QUICK_RULES; i++) disableQuickRule(i);
+        for (i=0; i<OUT_WRITER_LIST_LEN; i++) g_outWriterList[i].channel = C_INVALID;
         init_i2c_system(true);
         UARTprintf("done\n");
     }
@@ -362,16 +371,15 @@ void task_pcf_io(void *pvParameters)
     TickType_t xLastWakeTime;
     unsigned i;
     // hPcfInReader = xTaskGetCurrentTaskHandle();
-    UARTprintf("%22s: Started!\n", "taskPcfInReader()");
+    UARTprintf("%22s: Started! Cycle time = %d ms\n", "task_pcf_io()", DEBOUNCER_READ_PERIOD);
+    if (!g_i2c_queue) g_i2c_queue = xQueueCreate(32, sizeof(t_i2cCustom));
     for (i=0; i<MAX_QUICK_RULES; i++) disableQuickRule(i);
     for (i=0; i<OUT_WRITER_LIST_LEN; i++) g_outWriterList[i].channel = C_INVALID;
     vTaskDelay(1);
     init_i2c_system(true);
-    vTaskDelay(1);
     // Get the initial state of all switches silently (without reporting Switch Events)
     trigger_i2c_cycle();
     readSwitchMatrix();
-    // Enable weak pullup on PCF0,1
     xLastWakeTime = xTaskGetTickCount();
     i = 0;
     while (1) {
@@ -380,7 +388,7 @@ void task_pcf_io(void *pvParameters)
         process_IO();
         // unsigned cycles = stopTimer(); UARTprintf("%d cycles, %d us\n", cycles, cycles * 1000ll * 1000 / SYSTEM_CLOCK);
         //Run every 1 ms --> 4 ms debounce latency
-        vTaskDelayUntil(&xLastWakeTime, DEBOUNCER_READ_PERIOD);
+        vTaskDelayUntil(&xLastWakeTime, DEBOUNCER_READ_PERIOD / portTICK_PERIOD_MS);
         // vTaskDelayUntil(&xLastWakeTime, 3000);
         //Start background I2C scanner (takes ~ 400 us)
         // startTimer();

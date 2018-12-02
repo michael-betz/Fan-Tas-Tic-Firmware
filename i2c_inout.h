@@ -6,14 +6,16 @@
 //*****************************************************************************
 // Defines
 //*****************************************************************************
+// How many bits of BCM for the i2c output channels, the more the slower
 #define N_BIT_PWM 3
-// * The arrays with the I2C readback values and states of each input *
 // How many PCL chips per channel (careful must be a multiple of 4)
 #define PCF_MAX_PER_CHANNEL 8
 // Lowest possible I2C Address of a PCF8574 IO extender (all address pins low)
 #define PCF_LOWEST_ADDR 0x20
+// After how much time to check for errors and disable PCFs [ms]
+#define PCF_ERR_CHECK_CYCLE 10000
 // PCF gets disabled after that many errors
-#define PCF_ERR_CNT_DISABLE 0x1FFFF
+#define PCF_ERR_CNT_DISABLE  9990
 
 //--------------
 // Custom types
@@ -39,7 +41,7 @@ typedef struct {
 #define FPCF_WENABLED (1<<1)    // 1 = Write PCF
 
 typedef struct {
-    uint8_t flags;
+    uint8_t channel;
     uint8_t i2c_addr;
     uint8_t nWrite;
     uint8_t nRead;
@@ -76,7 +78,9 @@ void print_pcf_state();
 // Return pointer to pcf_state instance of this pin
 t_pcf_state *get_pcf(t_hw_index *pin);
 // Update a bcm buffer with a new pwm value
-void setBcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue);
+void set_bcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue);
+// Return PWM value of certain pin from bcmbuffer
+uint8_t get_bcm(uint8_t *bcmBuffer, uint8_t pin);
 // Send byte over i2c and block (no interrupts)
 void i2c_send(uint32_t b, uint8_t addr, uint8_t data);
 // Send byte over i2c and yield (isr & freeRTOS must be setup)

@@ -198,7 +198,7 @@ uint8_t *fillPiongBuffer( uint8_t *srcPointer, uint16_t *destPointer, int32_t *n
     return srcPointer;
 }
 
-void spiISR( uint8_t channel ){
+void spiISR(uint8_t channel){
     //Is called by uDMA interrupt after one block has been transferred! (takes 640 us)
     //It takes < 50 us to refresh a buffer
     uint32_t temp;
@@ -206,6 +206,7 @@ void spiISR( uint8_t channel ){
     t_spiTransferState *state = &g_spiState[channel];
     temp = ROM_SSIIntStatus(state->baseAdr, 1);
     ROM_SSIIntClear(state->baseAdr, temp);
+    // UARTprintf("I%xI", channel);
     // Make sure the previous DMA transfer has finished. Else something fishy is going on
     ASSERT( !ROM_uDMAChannelIsEnabled(state->dmaChannel) );
     switch( state->state ){
@@ -268,7 +269,6 @@ void spiISR( uint8_t channel ){
     // Check if a buffer recharge is neccesary
     if( state->nLEDBytesLeft <= 0 ){
         state->state = SPI_SEND_ZERO;    //Send 50 us of LOW to latch LEDs
-
     } else {
         // Otherwise refill the buffer
         state->currentLEDByte = fillPiongBuffer( state->currentLEDByte, bufferToRefill, &state->nLEDBytesLeft );

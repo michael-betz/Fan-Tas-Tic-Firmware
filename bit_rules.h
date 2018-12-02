@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "FreeRTOS.h"
 #include "task.h"
+#include "queue.h"
 
 // Update PCFs every 1 ms
 #define DEBOUNCER_READ_PERIOD 1
@@ -56,7 +57,6 @@ typedef struct {
 // State of a pulsed solenoid driver output pin
 typedef struct {
     int16_t tPulse;                 // Countdown counter, How long does the `high` pulse last [ms], -1 = invalid rule
-    uint16_t highPWM;               // PWM value after trigger
     uint16_t lowPWM;                // PWM value after tPulse      (max. resolution is defined by N_BIT_PWM)
 } t_BitModifyRules;
 
@@ -87,6 +87,7 @@ typedef struct {
 //------------------------
 // Global vars
 //------------------------
+extern QueueHandle_t g_i2c_queue;
 extern TaskHandle_t hPcfInReader;
 extern t_switchStateConverter g_SwitchStateSampled;
 extern t_switchStateConverter g_SwitchStateDebounced;

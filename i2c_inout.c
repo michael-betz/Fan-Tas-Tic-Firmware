@@ -44,6 +44,8 @@ t_i2cChannelState g_sI2CInst[4];
 // current bcmBuffer index for all PCF outputs,
 // set by trigger_i2c_cycle()
 static unsigned g_bcmIndex = 0;
+// Counts how many PCM cycles have been triggered
+static unsigned i2c_cycle = 0;
 
 // To wait for all channels to finish
 // static EventGroupHandle_t i2c_flags = NULL;
@@ -90,6 +92,7 @@ static void i2cUnstucker(uint32_t base, uint8_t pin_SCL, uint8_t pin_SDA){
     }
 }
 
+// Return a PCF instance specific for pin
 t_pcf_state *get_pcf(t_hw_index *pin)
 {
     if (!pin) return NULL;
@@ -99,15 +102,27 @@ t_pcf_state *get_pcf(t_hw_index *pin)
     return &(g_sI2CInst[c].pcf_state[a]);
 }
 
-void setBcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue) {
-    // Pre calculate and SET the values which need to be output on a pin to get
-    // Binary Code Modulation (BCM) with a certain power level.
+// Pre calculate and SET the values which need to be output on a pin to get
+// Binary Code Modulation (BCM) with a certain power level.
+void set_bcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue) {
+    if (pin > 7) return;
     taskENTER_CRITICAL();
     for (unsigned j=0; j < N_BIT_PWM; j++) {
         HWREGBITB(bcmBuffer, pin) = HWREGBITB(&pwmValue, j);
         bcmBuffer++;
     }
     taskEXIT_CRITICAL();
+}
+
+// Return PWM value of certain pin from bcmbuffer
+uint8_t get_bcm(uint8_t *bcmBuffer, uint8_t pin) {
+    uint8_t temp = 0;
+    if (pin > 7) return 0;
+    for (unsigned j=0; j<N_BIT_PWM; j++) {
+        HWREGBITB(&temp, j) = HWREGBITB(bcmBuffer, pin);
+        bcmBuffer++;
+    }
+    return temp;
 }
 
 static void my_pcf_init(t_pcf_state *pcf)
@@ -231,9 +246,11 @@ void i2c_isr(t_i2cChannelState *state)
     unsigned b = state->base_addr;
     unsigned mcs = HWREG(b + I2C_O_MCS);
     t_pcf_state *pcf;
+    ledOut(1);
     ROM_I2CMasterIntClear(b);
     // When the BUSY bit is set, the other I2C status bits are not valid.
     if (mcs & I2C_MCS_BUSY){
+        ledOut(0);
         return;
     }
 
@@ -242,7 +259,6 @@ void i2c_isr(t_i2cChannelState *state)
 
     switch(state->i2c_state){
         case I2C_START:
-            ledOut(1);
             // Start a single byte read
             state->currentPcf = 0;
             pcf = state->pcf_state;
@@ -260,18 +276,12 @@ void i2c_isr(t_i2cChannelState *state)
             break;
 
         case I2C_PCF:
-            ledOut(2);
             // Evaluate result of the single byte read or write
             pcf = &(state->pcf_state[state->currentPcf]);
             pcf->last_mcs = mcs;
             // Errata I2C#07: DATACK bit is not cleared on read!
             if (mcs & (I2C_MCS_ADRACK | I2C_MCS_ARBLST)) {
                 pcf->err_cnt++;
-                // Disable PCF when there's too many errors
-                if(pcf->err_cnt > PCF_ERR_CNT_DISABLE){
-                    pcf->flags = 0;
-                    pcf->err_cnt = 0;
-                }
             } else if (pcf->value_target && (pcf->flags & FPCF_RENABLED)){
                 // pcf->value = HWREG(b + I2C_O_MDR);
                 *(pcf->value_target) = HWREG(b + I2C_O_MDR);
@@ -287,7 +297,6 @@ void i2c_isr(t_i2cChannelState *state)
             break;
 
         case I2C_CUSTOM:
-            ledOut(3);
             _isr_notify(state, &hpw);
             break;
 
@@ -374,6 +383,7 @@ void init_i2c_system(bool isr_init) {
     ROM_I2CMasterInitExpClk(I2C3_BASE, SYSTEM_CLOCK, true);
 
     if (isr_init){
+        i2c_cycle = 0;
         // Initialize I2C0 peripheral driver.
         i2c_state_init(&g_sI2CInst[0], I2C0_BASE, INT_I2C0);
         i2c_state_init(&g_sI2CInst[1], I2C1_BASE, INT_I2C1);
@@ -404,22 +414,32 @@ void init_i2c_system(bool isr_init) {
 // Shall be called every 1 ms
 void trigger_i2c_cycle()
 {
-    static unsigned nCalls = 0;
-    nCalls++;
+    static unsigned bcm_ticks=0;
+    i2c_cycle++;
+    bcm_ticks++;
     // Cycle through the bcm_buffer in a binary way
-    if (nCalls >= (1<<g_bcmIndex)) {
-        nCalls = 0;
+    if (bcm_ticks >= (1<<g_bcmIndex)) {
+        bcm_ticks = 0;
         g_bcmIndex++;
         if(g_bcmIndex >= N_BIT_PWM){
             g_bcmIndex = 0;
         }
     }
     // UARTprintf("%x ", g_bcmIndex);
-    // The whole i2c read sequence takes < 0.5 us
+    // Trigger a new i2c sequence (takes < 0.5 us until completion)
+    t_i2cChannelState *s = g_sI2CInst;
     for (unsigned i=0; i<=3; i++){
-        t_i2cChannelState *s = &g_sI2CInst[i];
         s->i2c_state = I2C_START;
+        // After 10 s of running, disable PCFs when there's too many errors
+        if (i2c_cycle == PCF_ERR_CHECK_CYCLE) {
+            t_pcf_state *pcf = s->pcf_state;
+            for (unsigned p=0; p<PCF_MAX_PER_CHANNEL; p++){
+                if (pcf->err_cnt > PCF_ERR_CNT_DISABLE) pcf->flags = 0;
+                pcf++;
+            }
+        }
         IntTrigger(s->int_addr);
+        s++;
     }
 }
 
@@ -447,7 +467,7 @@ void print_pcf_state()
                 );
             } else {
                 UARTprintf(
-                    "   [%2x]:              ",
+                    "   [%2x]:           ",
                     pcfp->i2c_addr
                 );
             }

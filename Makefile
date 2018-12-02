@@ -23,7 +23,7 @@ SRCS       += my_uartstdio.c usbCallbacks.c  usb_serial_structs.c
 SRCS       += cmdline.c ustdlib.c
 # FreeRTOS stuff from tivaware folder
 SRCS       += croutine.c  event_groups.c  list.c  queue.c  tasks.c  timers.c
-SRCS       += port.c heap_2.c
+SRCS       += port.c heap_4.c
 # Turn into gcc/*.o files, add libs and linker scripts
 OBJS		= $(addprefix ${COMPILER}/, $(subst .c,.o,$(SRCS)))
 OBJS       += ${ROOT}/usblib/${COMPILER}/libusb.a
