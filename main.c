@@ -221,7 +221,6 @@ int main(void) {
         SYSCTL_OSC_MAIN
     );
     initGpio();
-    UARTStdioConfig(0, 115200, SYSTEM_CLOCK);
     // Write 0 to all PCFs (in case there is relays)
     init_i2c_system(false);
     // Init debug HW timer for measuring processor cycles (%timeit)
@@ -255,15 +254,15 @@ int main(void) {
     // Highest Int priority = (0<<5)    (only upper 3 bits count)
     // Lowest Int priority  = (7<<5)
     //-------------------------------------------------------------------------
-    ROM_IntPrioritySet(INT_USB0, (6<<5));     //USB = Low priority
+    ROM_IntPrioritySet(INT_USB0, (5<<5));     //USB = Low priority
     ROM_IntPrioritySet(INT_I2C0, (6<<5));     //I2C = Medium priority
     ROM_IntPrioritySet(INT_I2C1, (6<<5));
     ROM_IntPrioritySet(INT_I2C2, (6<<5));
     ROM_IntPrioritySet(INT_I2C3, (6<<5));
-    ROM_IntPrioritySet(INT_UART0,(6<<5));     //Debug UART = Lowest priority
-    ROM_IntPrioritySet(INT_SSI1, (6<<5));     //SPI  = High priority
-    ROM_IntPrioritySet(INT_SSI2, (6<<5));
-    ROM_IntPrioritySet(INT_SSI3, (6<<5));
+    ROM_IntPrioritySet(INT_UART0,(7<<5));     //Debug UART = Lowest priority
+    ROM_IntPrioritySet(INT_SSI1, (5<<5));     //SPI  = High priority
+    ROM_IntPrioritySet(INT_SSI2, (5<<5));
+    ROM_IntPrioritySet(INT_SSI3, (5<<5));
 
     //-------------------------------------------------------------------------
     // Startup the FreeRTOS scheduler

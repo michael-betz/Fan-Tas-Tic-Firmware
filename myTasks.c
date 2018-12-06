@@ -751,12 +751,12 @@ int Cmd_HI(int argc, char *argv[]) {
     if(argc != 2) return CMDLINE_TOO_FEW_ARGS;
     t_hw_index i = decodeHwIndex(ustrtoul(argv[1], NULL, 0), 1);
     if (i.channel > 3) {
-        REPORT_ERROR("ER:001E\n");
+        // REPORT_ERROR("ER:001E\n");
         UARTprintf("%22s: Not a I2C channel: %x\n", "Cmd_HI()", i.channel);
         return 0;
     }
     if (i.i2c_addr > 0x27) {
-        REPORT_ERROR("ER:001E\n");
+        // REPORT_ERROR("ER:001E\n");
         UARTprintf("%22s: Invalid i2c_addr: %x\n", "Cmd_HI()", i.i2c_addr);
         return 0;
     }
