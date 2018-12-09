@@ -254,7 +254,7 @@ int main(void) {
     // Highest Int priority = (0<<5)    (only upper 3 bits count)
     // Lowest Int priority  = (7<<5)
     //-------------------------------------------------------------------------
-    ROM_IntPrioritySet(INT_USB0, (5<<5));     //USB = Low priority
+    ROM_IntPrioritySet(INT_USB0, (6<<5));     //USB = Low priority
     ROM_IntPrioritySet(INT_I2C0, (6<<5));     //I2C = Medium priority
     ROM_IntPrioritySet(INT_I2C1, (6<<5));
     ROM_IntPrioritySet(INT_I2C2, (6<<5));

@@ -13,7 +13,7 @@ Controller for Pinball machines based on an TM4C123G LaunchPad™ Evaluation Kit
  * 3 x SPI channels for running [WS2811 / WS2812 LED strings](http://www.ebay.com/sch/i.html?_from=R40&_trksid=p2050601.m570.l1313.TR0.TRC0.H0.Xled+strand+ws2811.TRS5&_nkw=led+strand+ws2811&_sacat=0) with up to 1024 LEDs per channel
  * In- / Outputs can be easily and cheaply added with [PCF8574](http://www.ti.com/product/pcf8574) I2C GPIO extenders (check eBay for [cheap I/O modules](http://www.ebay.com/sch/i.html?_sacat=0&_nkw=i2c+expander&_frs=1))
  * Super fast USB virtual serial connection to host PC
- * KiCad PCB files available, no tiny SMD components, can be assembled by hand
+ * [KiCad PCB files available](https://github.com/yetifrisstlama/Fan-Tas-Tic-PCB). Based on cheap and easily available components
 
 ## Software features
  * Software can handle up to 320 channels which can be used as In- or Outputs
