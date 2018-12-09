@@ -1,6 +1,11 @@
 # Fan-Tas-Tic-Controller
 Controller for Pinball machines based on an TM4C123G LaunchPad™ Evaluation Kit, compatible with the [Mission Pinball API](https://missionpinball.com/).
 
+## Design ideas
+  * Make the system as modular as possible
+  * Use cheap and easily available components
+  * [Free and open-source software (FOSS)](https://en.wikipedia.org/wiki/Free_and_open-source_software)
+
 ## Hardware features
  * 8x8 Switch matrix inputs
  * 12 onboard drivers for solenoids, 4 of them can do hardware PWM (> 100 kHz)
@@ -12,34 +17,30 @@ Controller for Pinball machines based on an TM4C123G LaunchPad™ Evaluation Kit
 
 ## Software features
  * Software can handle up to 320 channels which can be used as In- or Outputs
- * All In- / Outputs are identified by a 16 bit unique ID. No configuration necessary.
- * All Outputs support 3 bit PWM with > 250 Hz (using [binary code modulation](http://www.batsocks.co.uk/readme/art_bcm_1.htm) over I2C)
- * All inputs are debounced and read 333 times per second. A switch toggles after keeping its state for 4 ticks (12 ms).
- * The timing for the WS2811 LEDs is kept within spec by using the hardware SPI module and DMA transfers.
- * Software is based on [FreeRTOS](http://www.freertos.org/) and therefore easily extendable.
+ * All In- / Output channels are identified by a 16 bit unique ID. No configuration necessary.
+ * All Outputs support 3 bit PWM with > 125 Hz (using [binary code modulation](http://www.batsocks.co.uk/readme/art_bcm_1.htm) over I2C)
+ * All inputs are read 1000 times per second and optionally debounced. A switch toggles after keeping its state for 4 ms.
+ * The timing for the WS2811 LEDs is kept within spec by using the hardware SPI module and DMA transfers
+ * Firmware is based on [FreeRTOS](http://www.freertos.org/)
+ * Compatible with the [Mission Pinball](http://missionpinball.org/) API with this [Hardware platform driver](https://github.com/yetifrisstlama/Fan-Tas-Tic-platform)
 
 # Digital inputs / outputs
 There are 4 I2C channels which can handle up to 8 x PCF8574 each. The addresses of the chips needs to be configured from 0x20 - 0x27.
 
-To use an PCF8574 as an input,  a 0xFF needs to be _written_ to it (to prevent the open drain outputs pulling the pin low).
+To use an PCF8574 as an input, a 0xFF needs to be _written_ to it (to prevent the open drain outputs pulling the pin low). This can be achieved with the `HI` command.
 Then the pin state can be acquired with a 1 byte read transaction over I2C.
 
-So all I2C extenders (no matter if used as in- or output) can be read in bulk.
-I2C is fast enough to read all 32 of them (on 4 channels in parallel) with 625 Hz repetition rate.
-Reading an empty address will give a NO_ACK read error, which is silently ignored.
-
-
-
 ## Debouncing
-The taskPcfInReader() is running at 333 Hz, reading all switches (matrix and I2C) into an array
- * Switch Matrix (SM) is read in foreground while I2C transactions happen in background (TI I2Cm driver)
+The task_pcf_io() is running at 1000 Hz, reading all switches (matrix and I2C) into an array
+ * Switch Matrix (SM) is read in foreground while I2C transactions happens in interrupt context
  * When both reads are finished, the Debouncing routine is called
+ * More info about the I2C engine in this [blog post](https://yetifrisstlama.github.io/fan-tas-tic-firmware-upgrade/)
  * If a changed input bit was detected, it increments a 2 bit [vertical counter](http://www.compuphase.com/electronics/debouncing.htm).
    The ARM CPU can process 32 input bits in a single instruction, which speeds things up!
  * If the change persists for 4 read cycles, the vertical counter of that bit will overflow and trigger a definite change.
  * The current debounced state and any bits which toggled during the current iteration are stored in global variables.
  * The serial reporter function looks for changed bits, encodes them and reports them as `Switch Events` on the serial port
- * The quick-fire rule function checks a list of rules, which can be triggered by changed bits, which can lead to immediate actions, like coils firing.
+ * The quick-fire rule function checks a list of rules, which can be triggered by changed bits, which can lead to immediate actions, like coils firing
 
 ## `hwIndex` identifies an input / output pin
 It is a 16 bit number which uniquely identifies each input / output pin. Note that depending on the number of IO expanders usend in a setup,
@@ -121,26 +122,72 @@ The `DEVICE` port provides a virtual serial port
 which is meant to communicate with the (Python) host application. This port listens to the same commands but does not echo any
 input characters or status messages, which makes it easier to talk to programatically.
 
-Note that the `DEVICE` port reports errors in the form of an `ER:xxxx\n` error code. They can be looked up in [this](https://docs.google.com/spreadsheets/d/1QlxT6QhTLHodxV4uOGEEIK3jQQLPyiI4lmSObMyx4UE/edit?usp=sharing) table.
+Note that the `DEVICE` port reports errors in the form of an `ER:xxxx\n` error code. They can be looked up in [this](https://docs.google.com/spreadsheets/d/1QlxT6QhTLHodxV4uOGEEIK3jQQLPyiI4lmSObMyx4UE/edit?usp=sharing) (slightly out of date) table.
 
-        **************************************************
-         Available commands   <required>  [optional]
-        **************************************************
-        ?     : Display list of commands
-        *IDN? : Display ID and version info
-        DISC  : Discover PCF8574 GPIO expanders on I2C busses
-        SWE   : <OnOff> En./Dis. reporting of switch events
-        DEB   : <hwIndex> <OnOff> En./Dis. 12 ms debouncing
-        SW?   : Return the state of ALL switches (40 bytes)
-        SOE   : <OnOff> En./Dis. 24 V solenoid power (careful!)
-        OUT   : <hwIndex> <PWMlow> [tPulse] [PWMhigh]
-        RUL   : <ID> <IDin> <IDout> <trHoldOff>
-                <tPulse> <pwmOn> <pwmOff> <bPosEdge>
-        RULE  : En./Dis a prev. def. rule: RULE <ID> <OnOff>
-        LEC   : <channel> <spiSpeed [Hz]> [frameFmt]
-        LED   : <channel> <nBytes>\n<binary blob of nBytes>
-        I2C   : <channel> <I2Caddr> <sendData> <nBytesRx>
+    **************************************************
+     Available commands   <required>  [optional]
+    **************************************************
+    ?     : Display list of commands
+    *IDN? : Display ID and version info
+    IL    : I2C: List status of GPIO expanders
+    IR    : I2C: Reset I2C system
+    OL    : I2C: List output writers
+    HI    : <hwIndex> set all ports of PCF high (input mode)
+    SWE   : <OnOff> En./Dis. reporting of switch events
+    DEB   : <hwIndex> <OnOff> En./Dis. 12 ms debouncing
+    SW?   : Return the state of ALL switches (40 bytes)
+    SOE   : <OnOff> En./Dis. 24 V solenoid power (careful!)
+    OUT   : <hwIndex> <PWMlow> [tPulse] [PWMhigh]
+    RUL   : <ID> <IDin> <IDout> <trHoldOff>
+            <tPulse> <pwmOn> <pwmOff> <bPosEdge>
+    RULE  : En./Dis a prev. def. rule: RULE <ID> <OnOff>
+    LEC   : <channel> <spiSpeed [Hz]> [frameFmt]
+    LED   : <channel> <nBytes>\n<binary blob of nBytes>
+    I2C   : <channel> <I2Caddr> [hexSendData] <nBytesRx>
 
+
+## `IL` I2C input list
+Show status of the 4 I2C channels in 4 columns. The PCF8574 GPIO expanders have
+an I2C address between 0x20 and 0x27. Each address corresponds to one row.
+`R` indicates the chip is read (inputs), `W` indicates it is written (outputs).
+The `[I2C_ADDRESS]` follows. Then the last read value. Then the `(I2C_ERROR_COUNT)`.
+The latter is incremented on every transaction without ACK.
+
+__Example__
+
+Sent:
+
+    IL\n
+
+Received:
+
+    R/W[I2C_ADDR]: VAL (ERR_CNT)
+    W[20]:    (    0)   [20]:              [20]:              [20]:
+    R[21]: ff (    0)   [21]:              [21]:              [21]:
+     [22]:              [22]:              [22]:              [22]:
+     [23]:              [23]:              [23]:              [23]:
+     [24]:              [24]:              [24]:              [24]:
+     [25]:              [25]:              [25]:              [25]:
+     [26]:              [26]:              [26]:              [26]:
+     [27]:             R[27]:  0 (    0)   [27]:              [27]:
+
+## `OL` I2C output list
+Show a list of active output channels. These channels are continously updated
+to achieve the `bcm` intensity modulation. Syntax is:
+  * array index `N:`
+  * `[I2C_CHANNEL, I2C_ADDRESS]`
+  * Intensity values for each of the 8 bits of this PCF8574
+
+__Example__
+
+Sent:
+
+    OL\n
+
+Received:
+
+    N: [CH,I2C] PWM0 PWM1 ...
+    0: [0,20]    3    0    0    0    0    0    0    0
 
 ## `SWE` enables the reporting of Switch events
 When a switch input flips its state, its hwIndex and new state is immediately reported on the USB serial port.
@@ -159,7 +206,7 @@ Received:
         SE:0f8=1 0fa=1 0fc=0 0fe=1\n
 
 ## `DEB` disables the debouncing timer for certain inputs
-By default, each input is buffered by a deboucning timer, which recognizes a change in input level only after it has been kept stable for 12 ms. This can be disabled to minimize input latency (for example for jet bumpers).
+By default, each input is buffered by a deboucning timer, which recognizes a change in input level only after it has been kept stable for 4 ms. This can be disabled to minimize input latency (for example for jet bumpers).
 
  __Example__
 
@@ -268,14 +315,10 @@ Set the first two LEDs on channel 1. The first LED will glow white at full power
 ### Troubleshooting glitches
 If you get glitches and artifacts on your LEDs, you can try the following:
 
-    * If using the TI compiler, optimization level must be set to 3 `Interprocedure Optimization`
-      and speed vs size tradeoff to `optimize for max. speed`.
-      Anything below gives glitches as the DMA buffer underflows. Anything above
-      gives deadlocks due to skipped bytes on the USB serial port.
-    * Play with the SPI speed setting (`LEC` command). Some LED strings, especially cheap ones from eBay,
-      may significantly deviate from specifications
-    * Try shorter cables to the first LED
-    * If nothing else helps, have a look at the data stream on a scope
+  * Play with the SPI speed setting (`LEC` command). Some LED strings,
+    especially the cheaper ones can significantly deviate from specifications
+  * Try shorter cables to the first LED
+  * If nothing else helps, get out the scope
 
 ## `LEC` configure the WS2811 data rate
 Set the output data-rate of the SPI module in bits / s.
@@ -315,6 +358,9 @@ As 4 SPI bits encode 1 WS2811 clock period, the effective speed is 425 kBaud.
 
 
 ## `I2C` do a custom I2C transaction
+
+__work in progress__
+
 This command does a send / receive transaction on one of the I2C busses. Use this to communicate with custom extension boards from python.
 
 __Example__
