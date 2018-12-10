@@ -99,7 +99,7 @@ void debounceAlgo( uint32_t *sample, uint32_t *state, uint32_t *toggle, uint32_t
 
 void reportSwitchStates() {
     // FREERTOS will crash when REPORT_SWITCH_BUF_SIZE > 400, why?
-    // --> as during the context switch it copies the whole thing on the stack :p
+    // --> as during the context switch it copies the whole thing on the heap :p
     // Now we use static to make all large buffers invisible to the context switcher
     static char outBuffer[REPORT_SWITCH_BUF_SIZE];
     // Report changed switch states
@@ -232,10 +232,9 @@ static void fillBitRule(t_hw_index *pin, t_PCLOutputByte *w, int16_t tPulse, uin
     if (pin->channel == C_FAST_PWM) {
         setPwm(pin->pinIndex, highPower);
         return;
-    }
-    if (w->pcf) {
+    } else if (w->pcf) {
         set_bcm(w->pcf->bcm_buffer, pin->pinIndex, highPower);
-        w->pcf->flags |= FPCF_WENABLED;
+        w->pcf->flags = FPCF_WENABLED; // Intentionally clearing the read flag
         return;
     }
     UARTprintf("fillBitRule(): !!! trouble !!!\n");
