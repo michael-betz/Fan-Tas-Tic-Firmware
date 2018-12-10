@@ -26,9 +26,9 @@
 #include "mySpi.h"
 #include "quick_rules.h"
 
-//*****************************************************************************
-// Global vars.
-//*****************************************************************************
+//-------------------
+// Global vars
+//-------------------
 bool g_reportSwitchEvents = 0;
 uint8_t g_errorBuffer[8];
 
@@ -52,33 +52,27 @@ int Cmd_LED(int argc, char *argv[]);
 int Cmd_I2C(int argc, char *argv[]);
 int Cmd_HI(int argc, char *argv[]);
 
-//*****************************************************************************
-// Command parser
-//*****************************************************************************
-// This is the table that holds the command names, implementing functions, and brief description.
+// This is the table that holds the command names,
+// implementing functions, and brief description.
 tCmdLineEntry g_psCmdTable[] = {
-        { "?",     Cmd_help, ": Display list of commands" },
-        { "*IDN?", Cmd_IDN,  ": Display ID and version info" },
-        { "IL",    Cmd_IL,   ": I2C: List status of GPIO expanders"},
-        { "IR",    Cmd_IR,   ": I2C: Reset I2C system"},
-        { "OL",    Cmd_OL,   ": I2C: List output writers"},
-        { "HI",    Cmd_HI,   ": <hwIndex> set all ports of PCF high (input mode)"},
-        { "SWE",   Cmd_SWE,  ": <OnOff> En./Dis. reporting of switch events" },
-        { "DEB",   Cmd_DEB,  ": <hwIndex> <OnOff> En./Dis. 12 ms debouncing" },
-        { "SW?",   Cmd_SW,   ": Return the state of ALL switches (40 bytes)" },
-        { "SOE",   Cmd_SOE,  ": <OnOff> En./Dis. 24 V solenoid power (careful!)" },
-        { "OUT",   Cmd_OUT,  ": <hwIndex> <PWMlow> [tPulse] [PWMhigh]" },
-        { "RUL",   Cmd_RUL,  ": <ID> <IDin> <IDout> <trHoldOff>\n        <tPulse> <pwmOn> <pwmOff> <bPosEdge>" },
-        { "RULE",  Cmd_RULE, ": En./Dis a prev. def. rule: RULE <ID> <OnOff>" },
-        { "LEC",   Cmd_LEC,  ": <channel> <spiSpeed [Hz]> [frameFmt]" },
-        { "LED",   Cmd_LED,  ": <channel> <nBytes>\\n<binary blob of nBytes>" },
-        { "I2C",   Cmd_I2C,  ": <channel> <I2Caddr> [hexSendData] <nBytesRx>" },
-        { 0, 0, 0 } };
-
-
-//*****************************************************************************
-// Functions
-//*****************************************************************************
+        {"?",     Cmd_help, ": Display list of commands"},
+        {"*IDN?", Cmd_IDN,  ": Display ID and version info"},
+        {"IL",    Cmd_IL,   ": I2C: List status of GPIO expanders"},
+        {"IR",    Cmd_IR,   ": I2C: Reset I2C system"},
+        {"OL",    Cmd_OL,   ": I2C: List output writers"},
+        {"HI",    Cmd_HI,   ": <hwIndex> set all ports of PCF high (input mode)"},
+        {"SWE",   Cmd_SWE,  ": <OnOff> En./Dis. reporting of switch events"},
+        {"DEB",   Cmd_DEB,  ": <hwIndex> <OnOff> En./Dis. 12 ms debouncing"},
+        {"SW?",   Cmd_SW,   ": Return the state of ALL switches (40 bytes)"},
+        {"SOE",   Cmd_SOE,  ": <OnOff> En./Dis. 24 V solenoid power (careful!)"},
+        {"OUT",   Cmd_OUT,  ": <hwIndex> <PWMlow> [tPulse] [PWMhigh]"},
+        {"RUL",   Cmd_RUL,  ": <ID> <IDin> <IDout> <trHoldOff>\n        <tPulse> <pwmOn> <pwmOff> <bPosEdge>"},
+        {"RULE",  Cmd_RULE, ": En./Dis a prev. def. rule: RULE <ID> <OnOff>"},
+        {"LEC",   Cmd_LEC,  ": <channel> <spiSpeed [Hz]> [frameFmt]"},
+        {"LED",   Cmd_LED,  ": <channel> <nBytes>\\n<binary blob of nBytes>"},
+        {"I2C",   Cmd_I2C,  ": <channel> <I2Caddr> [hexSendData] <nBytesRx>"},
+        {NULL, NULL, NULL}
+};
 
 uint16_t strMyStrip(uint8_t *cmdString, uint16_t cmdLen) {
     //Remove \n, \r and make sure there is a \0 at the end
@@ -104,17 +98,10 @@ void taskDemoLED(void *pvParameters) {
             " Hi, here's the brain of Fan-Tas-Tic Pinball \n"
             "**************************************************\n");
     UARTprintf("%22s: %s", "taskDemoLED()", "Started!\n");
-    vTaskDelay( 1000 );
+    vTaskDelay(1000);
     UARTprintf("Press any key to enable debug messages ... ");
     globalDebugEnabled = 0; // Disables output to UART in ./utils/uartstdio.c
-    // unsigned i=0;
-    while (1) {
-        // Turn on LED 1
-        // ledOut( i++ );
-        // vTaskDelay(2);
-        // ledOut( 0 );
-        vTaskDelay(1000);
-    }
+    vTaskDelete(NULL);
 }
 
 int8_t cmdParse( uint8_t *charBuffer, uint16_t nCharsRead ){
@@ -496,13 +483,13 @@ int Cmd_RULE(int argc, char *argv[]) {
 
 int Cmd_RUL(int argc, char *argv[]) {
 // Configure and activate a Quick-fire rule:
-//  * quickRuleId (0-64)
-//  * input switch ID number
-//  * driver output ID number
+//  * quickRuleId (0 .. MAX_QUICK_RULES - 1)
+//  * input switch hwIndex
+//  * driver output hwIndex
 //  * post trigger hold-off time [ms]
 //  * pulse duration [ms]
-//  * pulse pwm [only for output ID 0-3 which are the pwm channels]
-//  * hold pwm  [only for output ID 0-3 which are the pwm channels]
+//  * pulse pwm intensity
+//  * hold pwm intensity
 //  * Enable trigger on pos edge?
 //  ------------------
 //   Example command:

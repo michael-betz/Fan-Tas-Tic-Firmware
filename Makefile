@@ -43,7 +43,7 @@ IPATH      += $(ROOT)/third_party/FreeRTOS/Source/portable/GCC/ARM_CM4F
 # Flags
 #--------------------------------
 CFLAGS 	   += -DGIT_VERSION=\"$(GIT_VERSION)\"
-CFLAGS 	   += -DTARGET_IS_TM4C123_RB1 -DUART_BUFFERED
+CFLAGS 	   += -DTARGET_IS_TM4C123_RB1 -DUART_BUFFERED -DCMDLINE_MAX_ARGS=9
 ifndef $(DEBUG)
 	CFLAGS += -O3
 endif
