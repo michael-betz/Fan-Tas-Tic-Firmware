@@ -1,42 +1,21 @@
 /*
- * tasks.c
  * FreeRTOS tasks running in parallel (`threads`)
-
  * This file mostly contains Functions for the communicating
  * with the host PC, which includes parsing and executing commands.
- *
- *  Created on: Dec 22, 2015
- *      Author: michael
  */
-
 #include <stdint.h>
 #include <stdbool.h>
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
-#include "inc/hw_ints.h"
 #include "inc/hw_ssi.h"
-
-// FreeRTOS includes
-#include "FreeRTOSConfig.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
-#include "semphr.h"
-
 // TivaWare includes
-#include "sensorlib/i2cm_drv.h"
-#include "driverlib/i2c.h"
 #include "driverlib/ssi.h"
-#include "driverlib/pin_map.h"
 #include "driverlib/gpio.h"
 #include "driverlib/debug.h"
-#include "driverlib/interrupt.h"
 #include "driverlib/rom.h"
-#include "driverlib/sysctl.h"
 #include "utils/ustdlib.h"
 #include "utils/cmdline.h"
 #include "my_uartstdio.h"
-
 // USB stuff
 #include "usblib/usblib.h"
 #include "usblib/usbcdc.h"
@@ -45,8 +24,7 @@
 #include "drivers/usb_serial_structs.h"
 #include "myTasks.h"
 #include "mySpi.h"
-#include "bit_rules.h"
-#include "main.h"
+#include "quick_rules.h"
 
 //*****************************************************************************
 // Global vars.

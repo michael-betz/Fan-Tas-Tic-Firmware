@@ -1,5 +1,4 @@
 // Scan the 8 x 8 Switch Matrix through a serial shift register
-
 #include <stdint.h>
 #include <stdbool.h>
 #include "inc/hw_memmap.h"
@@ -7,7 +6,7 @@
 #include "driverlib/rom.h"
 #include "driverlib/gpio.h"
 #include "switch_matrix.h"
-#include "bit_rules.h"
+#include "io_manager.h"
 
 
 uint8_t getSMrow() {

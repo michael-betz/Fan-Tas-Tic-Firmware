@@ -1,8 +1,8 @@
 // Anything related to processing the read input states
 // like debouncing and firing solenoids
 
-#ifndef BIT_RULES_H_
-#define BIT_RULES_H_
+#ifndef IO_MANAGER_H_
+#define IO_MANAGER_H_
 #include <stdint.h>
 #include "FreeRTOS.h"
 #include "task.h"
@@ -14,12 +14,6 @@
 #define REPORT_SWITCH_BUF_SIZE 90
 // Max. number of output channels
 #define OUT_WRITER_LIST_LEN 64
-// How many quick-fire rules can be defined
-#define MAX_QUICK_RULES 64
-// Flags for quick-fire rules
-#define QRF_TRIG_EDGE_POS 0
-#define QRF_ENABLED       3
-#define QRF_STATE_TRIG    4
 // How many uint32_t values to express all the input states
 #define N_LONGS sizeof(t_switchState)/sizeof(uint32_t)
 // How many uint8_t  values to express all the input states
@@ -41,18 +35,6 @@ typedef struct {
     uint8_t pinIndex;   // which bit is relevant [0 - 7]
     uint8_t i2c_addr; // Right shifted 7 bit I2C addr
 } t_hw_index;
-
-// Holds the state of a quick-fire rule
-typedef struct {
-    t_hw_index inputSwitchId;      // hwIndex specifying the input switch
-    uint8_t triggerFlags;           // ([0] enable/disable, [1] trigger on positive/negative edge, [2] disable ouput on release, [4] check toggle)
-    int16_t triggerHoldOffTime;     // post trigger hold-off time [ms]
-    int16_t triggerHoldOffCounter;  // Counts down each tick
-    t_hw_index outputDriverId;     // hwIndex specifying the driver output ID
-    int16_t tPulse;                 // pulse duration [ms]
-    uint16_t pwmHigh;               // power level during tPulse [0 - 15] for I2C, [0-MAX_PWM] for HWpwm
-    uint16_t pwmLow;                // power level after  tPulse [0 - 15] for I2C, [0-MAX_PWM] for HWpwm
-} t_quickRule;
 
 // State of a pulsed solenoid driver output pin
 typedef struct {
@@ -91,6 +73,7 @@ extern QueueHandle_t g_i2c_queue;
 extern TaskHandle_t hPcfInReader;
 extern t_switchStateConverter g_SwitchStateSampled;
 extern t_switchStateConverter g_SwitchStateDebounced;
+extern t_switchStateConverter g_SwitchStateToggled;
 extern t_switchStateConverter g_SwitchStateNoDebounce;
 extern bool g_reDiscover;
 
@@ -110,12 +93,7 @@ void print_out_writer_list();
 // asInput: is this supposed to be an input (1) or output (0)
 t_hw_index decodeHwIndex(uint16_t hwIndex, bool asInput);
 
-
-void setupQuickRule(uint8_t id, t_hw_index inputSwitchId,
-        t_hw_index outputDriverId, uint16_t triggerHoldOffTime,
-        uint16_t tPulse, uint16_t pwmHigh, uint16_t pwmLow, bool trigPosEdge );
-void enableQuickRule(uint8_t id);
-void disableQuickRule(uint8_t id);
+// Orchestrates the periodic reading and writing of PCF chips over I2C
 void task_pcf_io(void *pvParameters);
 
 #endif

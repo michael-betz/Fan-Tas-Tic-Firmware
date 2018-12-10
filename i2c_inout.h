@@ -64,7 +64,7 @@ typedef struct {
     t_pcf_state pcf_state[PCF_MAX_PER_CHANNEL];
 } t_i2cChannelState;
 
-#include "bit_rules.h"
+#include "io_manager.h"
 
 //--------------
 // Functions

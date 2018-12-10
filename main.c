@@ -1,12 +1,3 @@
-/* Fan-Tas-Tic Pinball controller
- * M.Betz,   01/2016
- *
- * main.c
- *
- * Based on a demonstration project of FreeRTOS 8.2 on the Tiva Launchpad by Andy Kobyljanec
- * TivaWare driverlib sourcecode is included.
- */
-
 #include <stdint.h>
 #include <stdbool.h>
 #include "inc/hw_memmap.h"
@@ -15,37 +6,23 @@
 #include "inc/hw_gpio.h"
 #include "inc/hw_ints.h"
 #include "inc/hw_pwm.h"
-
 // TivaWare includes
-#include "sensorlib/i2cm_drv.h"
 #include "driverlib/rom.h"
 #include "driverlib/timer.h"
 #include "driverlib/pwm.h"
 #include "driverlib/pin_map.h"
 #include "driverlib/gpio.h"
 #include "driverlib/sysctl.h"
-#include "my_uartstdio.h"
-
-// FreeRTOS includes
-#include "FreeRTOSConfig.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
-#include "semphr.h"
-
 //USB stuff
 #include "usblib/usblib.h"
 #include "usblib/usbcdc.h"
 #include "usblib/device/usbdevice.h"
 #include "usblib/device/usbdcdc.h"
 #include "drivers/usb_serial_structs.h"
-
 //My stuff
 #include "myTasks.h"
-#include "i2c_inout.h"
-#include "bit_rules.h"
+#include "io_manager.h"
 #include "mySpi.h"
-#include "main.h"
 
 TaskHandle_t hUSBCommandParser = NULL;
 

@@ -1,26 +1,11 @@
 /*
- * mySpi.c
  * DMA based WS2811 driver
- *
- *  Created on: Dec 22, 2015
- *      Author: michael
- *
- *
  */
-
-#include <stdint.h>
 #include <stdbool.h>
 #include "inc/hw_memmap.h"
 #include "inc/hw_ints.h"
 #include "inc/hw_ssi.h"
-//*****************************************************************************
-// FreeRTOS includes
-//*****************************************************************************
 #include "FreeRTOS.h"
-//*****************************************************************************
-// TivaWare includes
-//*****************************************************************************
-// #include "driverlib/i2c.h"
 #include "driverlib/ssi.h"
 #include "driverlib/udma.h"
 #include "driverlib/pin_map.h"
@@ -30,16 +15,12 @@
 #include "driverlib/rom.h"
 #include "driverlib/sysctl.h"
 #include "my_uartstdio.h"
-//*****************************************************************************
 // USB stuff
-//*****************************************************************************
 #include "usblib/usblib.h"
 #include "usblib/usbcdc.h"
 #include "usblib/device/usbdevice.h"
-#include "usblib/device/usbdcdc.h"
 #include "myTasks.h"
 #include "mySpi.h"
-#include "main.h"
 
 //*****************************************************************************
 // The control table used by the uDMA controller.  This table must be aligned
