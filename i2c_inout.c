@@ -429,30 +429,33 @@ void trigger_i2c_cycle()
 
 void print_pcf_state()
 {
-    UARTprintf("  R/W[I2C_ADDR]: VAL (ERR_CNT)\n");
+    UARTprintf("Syntax: R/W[HW_INDEX]: VAL (ERR_CNT)\n");
+    UARTprintf("----------------------------------------------------------------------------------\n");
+    UARTprintf("        CHANNEL_0          CHANNEL_1          CHANNEL_2          CHANNEL_3\n");
+    UARTprintf("----------------------------------------------------------------------------------\n");
     for(unsigned pcf=0; pcf<=7; pcf++){
+        UARTprintf("I2C_%2x  ", 0x20 + pcf);
         for(unsigned ch=0; ch<=3; ch++){
+            unsigned hw_index = 0x40 + ch * 0x40 + pcf * 8;
             t_i2cChannelState *chp = &(g_sI2CInst[ch]);
             t_pcf_state *pcfp = &(chp->pcf_state[pcf]);
             if (pcfp->flags & FPCF_WENABLED){
                 UARTprintf(
-                    "  W[%2x]:    (%5x)",
-                    pcfp->i2c_addr,
+                    "W[%3x]:    (%4x)  ",
+                    hw_index,
                     pcfp->err_cnt
                 );
             } else if (pcfp->flags & FPCF_RENABLED) {
                 UARTprintf(
-                    "  R[%2x]: %2x (%5x)",
-                    pcfp->i2c_addr,
-                    // pcfp->value,
+                    "R[%3x]: %2x (%4x)  ",
+                    hw_index,
                     *pcfp->value_target,
-                    // pcfp->last_mcs,
                     pcfp->err_cnt
                 );
             } else {
                 UARTprintf(
-                    "   [%2x]:           ",
-                    pcfp->i2c_addr
+                    " [%3x]:            ",
+                    hw_index
                 );
             }
         }
