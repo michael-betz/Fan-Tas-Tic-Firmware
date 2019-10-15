@@ -226,21 +226,6 @@ static void handleBitRules(unsigned dt) {
     }
 }
 
-// TODO also handle reads (reply to usb) and multi-byte transfers
-static void handle_i2c_custom()
-{
-    t_i2cCustom i2c;
-    // Do up to 3 transactions per PCF cycle
-    for (unsigned i=0; i<3; i++){
-        if (!xQueueReceive(g_i2c_queue, &i2c, 0)) break;
-        if (i2c.nWrite == 1) {
-            i2c_send_yield(i2c.channel, i2c.i2c_addr, *i2c.writeBuff);
-        }
-        vPortFree(i2c.readBuff);  i2c.readBuff  = NULL;
-        vPortFree(i2c.writeBuff); i2c.writeBuff = NULL;
-    }
-}
-
 // Called every 1 ms (hopefully) after new states have been read
 static void process_IO()
 {

@@ -624,15 +624,21 @@ int Cmd_LED(int argc, char *argv[]) {   //Here we need to switch the serialComma
     return( 0 );
 }
 
-uint8_t hexDigitToNibble( uint8_t hexChar ){
-    if( hexChar >= '0' && hexChar <= '9' ){
-        return( hexChar - '0' );
-    } else if ( hexChar >= 'a' && hexChar <= 'f' ){
-        return( hexChar - 'a' + 10 );
-    } else if ( hexChar >= 'A' && hexChar <= 'F' ){
-        return( hexChar - 'A' + 10 );
+static uint8_t hexToNibble(char hexChar)
+{
+    if(hexChar >= '0' && hexChar <= '9') {
+        return(hexChar - '0');
+    } else if (hexChar >= 'a' && hexChar <= 'f'){
+        return(hexChar - 'a' + 10);
+    } else if (hexChar >= 'A' && hexChar <= 'F'){
+        return(hexChar - 'A' + 10);
     }
-    return( 0 );
+    return(0);
+}
+
+static char nibbleToHex(unsigned nibble)
+{
+    return "0123456789ABCDEF"[nibble & 0x0F];
 }
 
 // Takes a string, returns a buff. Make sure to free it after use.
@@ -654,12 +660,31 @@ uint8_t *hexToBuff(char *str, unsigned *nWritten)
     }
     p = buff;
     for(unsigned i=0; i<nBytesTx; i++) {
-        *p  = hexDigitToNibble(*str++) << 4;
-        *p |= hexDigitToNibble(*str++);
+        *p  = hexToNibble(*str++) << 4;
+        *p |= hexToNibble(*str++);
         p++;
     }
     *nWritten = nBytesTx;
     return buff;
+}
+
+// Takes a buffer, returns a hex string
+// Make sure to free it after use.
+char *buffToHex(uint8_t *buf, unsigned len)
+{
+    unsigned nChars = len * 2 + 1;
+    char *chars = pvPortMalloc(nChars);
+    if (!chars) {
+        UARTprintf("%22s: pvPortMalloc() failed\n", "buffToHex()");
+        return NULL;
+    }
+    char *c = chars;
+    for (unsigned i=0; i<len; i++) {
+        *c++ = nibbleToHex(*buf >> 4);
+        *c++ = nibbleToHex(*buf++);
+    }
+    *c++ = '\0';
+    return chars;
 }
 
 // Fills up a t_i2cCustom after sanity checking and puts it on the queue
@@ -689,20 +714,30 @@ int Cmd_I2C(int argc, char *argv[]) {
             if (!i2c.writeBuff) return 0;
             i2c.nRead = ustrtoul(argv[4], NULL, 0);
         }
-        UARTprintf(
-            "CH: %x, addr: %x, nRead: %x, nWrite: %x [",
-            i2c.channel,
-            i2c.i2c_addr,
-            i2c.nRead,
-            i2c.nWrite
-        );
-        for (unsigned i=0; i<i2c.nWrite; i++) {
-            UARTprintf("%02x ", i2c.writeBuff[i]);
+        if (i2c.nRead > 0) {
+            i2c.readBuff = pvPortMalloc(i2c.nRead);
+            if (!i2c.readBuff) {
+                UARTprintf("%22s: read buffer not allocated :(\n", "Cmd_I2C()");
+                vPortFree(i2c.writeBuff); i2c.writeBuff = NULL;
+                vPortFree(i2c.readBuff); i2c.readBuff = NULL;
+                return 0;
+            }
         }
-        UARTprintf("]\n");
+        // UARTprintf(
+        //     "CH: %x, addr: %x, nRead: %x, nWrite: %x [",
+        //     i2c.channel,
+        //     i2c.i2c_addr,
+        //     i2c.nRead,
+        //     i2c.nWrite
+        // );
+        // for (unsigned i=0; i<i2c.nWrite; i++) {
+        //     UARTprintf("%02x ", i2c.writeBuff[i]);
+        // }
+        // UARTprintf("]\n");
         if(!xQueueSendToBack(g_i2c_queue, &i2c, 100 / portTICK_PERIOD_MS)) {
             UARTprintf("%22s: I2C queue full!\n", "Cmd_I2C()");
             vPortFree(i2c.writeBuff); i2c.writeBuff = NULL;
+            vPortFree(i2c.readBuff); i2c.readBuff = NULL;
         }
         return 0;
     }

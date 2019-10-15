@@ -20,6 +20,7 @@
 #include "driverlib/rom.h"
 #include "driverlib/interrupt.h"
 #include "my_uartstdio.h"
+#include "myTasks.h"
 #include "i2c_inout.h"
 
 // Four TI I2C driver instances for 4 I2C channels
@@ -48,6 +49,12 @@ void i2CIntHandler2(void) {
 
 void i2CIntHandler3(void) {
     i2c_isr(&g_sI2CInst[3]);
+}
+
+// Get i2c channel from base_addr
+static unsigned _get_ch(unsigned b)
+{
+    return (b - I2C0_BASE) >> 12;
 }
 
 static void i2cUnstucker(uint32_t base, uint8_t pin_SCL, uint8_t pin_SDA){
@@ -137,8 +144,8 @@ static void i2c_state_init(t_i2cChannelState *state, uint32_t base_addr, uint_fa
 }
 
 // Send byte over i2c and block (no interrupts)
-// b = base_addr, addr = left shifted i2c address
-void i2c_send(uint32_t b, uint8_t addr, uint8_t data)
+// b = base_addr, addr = 7 bit i2c address
+static void stupid_i2c_send(uint32_t b, uint8_t addr, uint8_t data)
 {
     while (HWREG(b + I2C_O_MCS) & I2C_MCS_BUSY);
     HWREG(b + I2C_O_MSA) = (addr << 1) | 0;
@@ -146,33 +153,116 @@ void i2c_send(uint32_t b, uint8_t addr, uint8_t data)
     HWREG(b + I2C_O_MCS) = I2C_MCS_STOP | I2C_MCS_START | I2C_MCS_RUN;
 }
 
+// Send, then receive tx/rx_len bytes over i2c and yield until interrupt
+// b = base_addr, addr = 7 bit i2c address
+// can only be called by process_IO(),
+// must only be called by process_IO() at the right time
+void i2c_tx_rx_n(uint32_t b, t_i2cCustom *i2c)
+{
+    if ((i2c == NULL) || ((i2c->nWrite == 0) && (i2c->nRead == 0))) return;
+    unsigned tempFlags, mcs;
+    uint8_t *tx_data = i2c->writeBuff;
+    uint8_t *rx_data = i2c->readBuff;
+    if (i2c->nWrite && (tx_data == NULL)) return;
+    if (i2c->nRead && (rx_data == NULL)) return;
+    i2c->flags = 0;
+    while (HWREG(b + I2C_O_MCS) & I2C_MCS_BUSY);
+
+    // send out i2c->nWrite bytes
+    if (i2c->nWrite) {
+        HWREG(b + I2C_O_MSA) = (i2c->i2c_addr << 1) | 0;
+        for (unsigned i = 0; i < i2c->nWrite; i++) {
+            tempFlags = I2C_MCS_RUN;
+            // send START on first iteration
+            if (i == 0)
+                tempFlags |= I2C_MCS_START;
+            if (i >= i2c->nWrite - 1 && i2c->nRead == 0)
+                tempFlags |= I2C_MCS_STOP;
+            HWREG(b + I2C_O_MDR) = *tx_data++;
+            HWREG(b + I2C_O_MCS) = tempFlags;
+            wait_for_noti_bits(1 << _get_ch(b));
+            ledOut(2);
+            ledOut(0);
+            mcs = HWREG(b + I2C_O_MCS);
+            // Store NACK error in flags
+            i2c->flags |= (mcs >> I2C_MCS_ADRACK) & 0x03;
+        }
+        // still in TRANSMIT state when we leave
+    }
+
+    // receive i2c->nRead bytes
+    if (i2c->nRead) {
+        HWREG(b + I2C_O_MSA) = (i2c->i2c_addr << 1) | 1;
+        for (unsigned i = 0; i < i2c->nRead; i++) {
+            tempFlags = I2C_MCS_RUN;
+            // send repeated START on first iteration
+            if (i == 0)
+                tempFlags |= I2C_MCS_START;
+            if (i >= i2c->nRead - 1)
+                tempFlags |= I2C_MCS_STOP;
+            else
+                tempFlags |= I2C_MCS_ACK;
+            HWREG(b + I2C_O_MCS) = tempFlags;
+            wait_for_noti_bits(1 << _get_ch(b));
+            ledOut(2);
+            ledOut(0);
+            *rx_data++ = HWREG(b + I2C_O_MDR);
+            mcs = HWREG(b + I2C_O_MCS);
+            i2c->flags |= ((mcs >> I2C_MCS_ADRACK) << 2) & 0x0C;
+        }
+    }
+}
+
 // Wait for all bits to be set in notification value (and clear them)
 void wait_for_noti_bits(uint32_t bits)
 {
     uint32_t noti_new, noti_ored = 0;
     do {
-        xTaskNotifyWait(0, 0xFFFFFFFF, &noti_new, portMAX_DELAY); //1000 / portTICK_PERIOD_MS
+        xTaskNotifyWait(0, bits, &noti_new, portMAX_DELAY); //1000 / portTICK_PERIOD_MS
         noti_ored |= noti_new;
     } while ((bits & noti_ored) != bits);
-    // xEventGroupWaitBits(
-    //     i2c_flags,
-    //     bits,
-    //     pdTRUE,
-    //     pdTRUE,
-    //     portMAX_DELAY
-    // );
 }
 
-// Yield from the task until i2c transaction complete
-void i2c_send_yield(uint8_t channel, uint8_t addr, uint8_t data)
+// carry out a custom i2c transaction and yield until done
+// can only be called by process_IO(),
+// which makes sure the timing is right. It gets sneaked in after all
+// PCFs are read / written.
+void handle_i2c_custom()
 {
-    if (channel > 3) return;
-    t_i2cChannelState *c = &g_sI2CInst[channel];
-    if (c->i2c_state != I2C_IDLE)
+    char *hexStr = NULL;
+    t_i2cCustom i2c;
+    // Do up to one transactions per PCF cycle
+    if (!xQueueReceive(g_i2c_queue, &i2c, 0))
         return;
+    if (i2c.channel > 3)
+        goto handle_i2c_custom_finally;
+    t_i2cChannelState *c = &g_sI2CInst[i2c.channel];
+    if (c->i2c_state != I2C_IDLE) {
+        UARTprintf("handle_i2c_custom(): Error! I2C not in IDLE state\n");
+        goto handle_i2c_custom_finally;
+    }
     c->i2c_state = I2C_CUSTOM;
-    i2c_send(c->base_addr, addr, data);
-    wait_for_noti_bits(1 << channel);
+    i2c_tx_rx_n(c->base_addr, &i2c);
+    c->i2c_state = I2C_IDLE;
+
+    hexStr = buffToHex(i2c.readBuff, i2c.nRead);
+    UARTprintf("I2C%x_RX: %s (%x)\n", i2c.channel, hexStr, i2c.flags);
+
+    // char *hexString = pvPortMalloc(i2c.nRead * 2 + 1);
+    // uint8_t *val = i2c.readBuff;
+    // char *c = hexString;
+    // if (hexString) {
+    //     for (unsigned i=0; i<i2c.nRead; i++) {
+    //         *c++ = nibbleToHex(*val >> 4);
+    //         *c++ = nibbleToHex(*val++);
+    //     }
+    //     *c = '\0';
+    //     vPortFree(hexString); hexString = NULL;
+    // }
+handle_i2c_custom_finally:
+    vPortFree(i2c.readBuff);  i2c.readBuff  = NULL;
+    vPortFree(i2c.writeBuff); i2c.writeBuff = NULL;
+    vPortFree(hexStr); hexStr = NULL;
 }
 
 // b = base_addr
@@ -181,7 +271,7 @@ static bool setup_pcf_rw(unsigned b, t_pcf_state *pcf)
 {
     if (pcf->flags & FPCF_WENABLED){
         // UARTprintf(" W%2x ", pcf->i2c_addr);
-        HWREG(b + I2C_O_MSA) = (pcf->i2c_addr<<1) | 0;
+        HWREG(b + I2C_O_MSA) = (pcf->i2c_addr << 1) | 0;
         HWREG(b + I2C_O_MDR) = pcf->bcm_buffer[g_bcmIndex];
         HWREG(b + I2C_O_MCS) = I2C_MCS_STOP | I2C_MCS_START | I2C_MCS_RUN;
         return true;
@@ -197,19 +287,12 @@ static bool setup_pcf_rw(unsigned b, t_pcf_state *pcf)
     return false;
 }
 
-// Get i2c channel from base_addr
-static unsigned _get_ch(unsigned b)
-{
-    return (b - I2C0_BASE) >> 12;
-}
-
 // Each I2C ISR has a channel number (0-3)
 // When the ISR is done, the pcfInReader task is notified
 // the bit corresponding to its CH# is set in the task noti. value
 // When all 4 bits are set, the task continues
 static void _isr_notify(t_i2cChannelState *state, BaseType_t *hpw)
 {
-    state->i2c_state = I2C_IDLE;
     xTaskNotifyFromISR(
         hPcfInReader,
         1 << _get_ch(state->base_addr),
@@ -234,6 +317,7 @@ void i2c_isr(t_i2cChannelState *state)
     ROM_I2CMasterIntClear(b);
     // When the BUSY bit is set, the other I2C status bits are not valid.
     if (mcs & I2C_MCS_BUSY){
+        UARTprintf("<B>");
         ledOut(0);
         return;
     }
@@ -252,6 +336,7 @@ void i2c_isr(t_i2cChannelState *state)
                 state->currentPcf++;
                 if (state->currentPcf >= PCF_MAX_PER_CHANNEL){
                     // Nothing to do, notify PCF_Reader
+                    state->i2c_state = I2C_IDLE;
                     _isr_notify(state, &hpw);
                     break;
                 }
@@ -274,6 +359,7 @@ void i2c_isr(t_i2cChannelState *state)
             do {
                 state->currentPcf++;
                 if (state->currentPcf >= PCF_MAX_PER_CHANNEL){
+                    state->i2c_state = I2C_IDLE;
                     _isr_notify(state, &hpw);
                     break;
                 }
@@ -281,15 +367,18 @@ void i2c_isr(t_i2cChannelState *state)
             break;
 
         case I2C_CUSTOM:
+            // 1 byte has been transmitted / received
+            // UARTprintf("<C%d>", _get_ch(state->base_addr));
+            // UARTprintf("<C>");
             _isr_notify(state, &hpw);
             break;
 
         case I2C_IDLE:
-            UARTprintf(" I ");
+            // UARTprintf("<I>");
             break;
 
         default:
-            UARTprintf(" ?%x? ", state->i2c_state);
+            UARTprintf("<?%x?>", state->i2c_state);
             state->i2c_state = I2C_IDLE;
     }
     portYIELD_FROM_ISR(hpw);
@@ -386,11 +475,12 @@ void init_i2c_system(bool isr_init) {
         // g_sI2CInst[0].pcf_state[0].flags = FPCF_RENABLED;
         // g_sI2CInst[0].pcf_state[1].flags = FPCF_RENABLED;
     } else {
+        // interrupts are not initialized yet, use blocking I2C
         for (unsigned p=0; p<PCF_MAX_PER_CHANNEL; p++){
-            i2c_send(I2C0_BASE, 0x20+p, 0x00);
-            i2c_send(I2C1_BASE, 0x20+p, 0x00);
-            i2c_send(I2C2_BASE, 0x20+p, 0x00);
-            i2c_send(I2C3_BASE, 0x20+p, 0x00);
+            stupid_i2c_send(I2C0_BASE, 0x20+p, 0x00);
+            stupid_i2c_send(I2C1_BASE, 0x20+p, 0x00);
+            stupid_i2c_send(I2C2_BASE, 0x20+p, 0x00);
+            stupid_i2c_send(I2C3_BASE, 0x20+p, 0x00);
         }
     }
 }

@@ -2,10 +2,9 @@
 # DEBUG = 1
 TARGET = fantastic
 PART = TM4C123GH6PM
-ROOT = /home/michael/ti/tivaware
+ROOT = /home/michael/pinball/Fan-Tas-Tic-Firmware/SW-TM4C-2.1.4.178
 GIT_VERSION = $(shell git describe --abbrev=4 --dirty --always --tags)
 include ${ROOT}/makedefs
-LIBC = /usr/lib/arm-none-eabi/newlib/armv7e-m/fpu/fpv5-d16/libc.a
 
 #--------------------------------
 # Source files (.c)

@@ -101,7 +101,14 @@ $ echo "c74ef1da07246d4ad20a92521ba44a7d567f6bc62556cd1b76e7fd6a8a75bf8c  SW-TM4
 SW-TM4C-2.1.4.178.exe: OK
 
 $ unzip SW-TM4C-2.1.4.178.exe
+$ cd SW-TM4C-2.1.4.178
+$ make
 ```
+If there is a error in building the examples like this:
+
+    arm-none-eabi-ld: section .ARM.exidx LMA [000000000000e068,000000000000e06f] overlaps section .data LMA [000000000000e068,000000000000eec7]
+
+just ignore it. The examples are not needed to continue.
 
 ### Build and flash the project
 Now edit `Makefile` and change the path `ROOT = ` to the tivaware folder from above.

@@ -315,7 +315,7 @@ static void NmiSR(void)
 {
     // red
     DISABLE_SOLENOIDS();
-    ROM_GPIOPinWrite(GPIO_PORTF_BASE, 0x0E, 1<<1);
+    ROM_GPIOPinWrite(GPIO_PORTF_BASE, 0x0E, 1 << 1);
     while(1) {}
 }
 
@@ -323,7 +323,7 @@ static void FaultISR(void)
 {
     // blue
     DISABLE_SOLENOIDS();
-    ROM_GPIOPinWrite(GPIO_PORTF_BASE, 0x0E, 2<<1);
+    ROM_GPIOPinWrite(GPIO_PORTF_BASE, 0x0E, 2 << 1);
     while(1) {}
 }
 
@@ -331,7 +331,7 @@ static void IntDefaultHandler(void)
 {
     // green
     DISABLE_SOLENOIDS();
-    ROM_GPIOPinWrite(GPIO_PORTF_BASE, 0x0E, 4<<1);
+    ROM_GPIOPinWrite(GPIO_PORTF_BASE, 0x0E, 4 << 1);
     while(1) {}
 }
 
@@ -339,6 +339,6 @@ void _exit (int status)
 {
     // red + blue
     DISABLE_SOLENOIDS();
-    ROM_GPIOPinWrite(GPIO_PORTF_BASE, 0x0E, 3<<1);
+    ROM_GPIOPinWrite(GPIO_PORTF_BASE, 0x0E, 3 << 1);
     while (1) {}
 }

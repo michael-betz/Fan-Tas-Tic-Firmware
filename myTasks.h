@@ -18,7 +18,6 @@
 //*****************************************************************************
 //#define CMD_PARSER_BUF_LEN (N_LEDS_MAX*3+28)   //Need 3072 for LED data blob of 1 channel
 #define CMD_PARSER_BUF_LEN 128                   //Most commands fit
-#define CUSTOM_I2C_BUF_LEN 64
 
 //*****************************************************************************
 // Custom types
@@ -42,5 +41,14 @@ void taskUsbCommandParser(void *pvParameters);
 void taskI2CCustomReporter(void *pvParameters);
 void usbReporter(void *pvParameters);
 void ts_usbSend(uint8_t *data, uint16_t len);
+
+// Takes a string, returns a buff.
+// Make sure to free it after use.
+uint8_t *hexToBuff(char *str, unsigned *nWritten);
+
+// Takes a buffer, returns a hex string
+// Make sure to free it after use.
+char *buffToHex(uint8_t *buf, unsigned len);
+
 
 #endif /* FAN_TAS_TIC_CONTROLLER_MYTASKS_H_ */

@@ -40,6 +40,12 @@ typedef struct {
 #define FPCF_RENABLED (1<<0)    // 1 = Read PCF
 #define FPCF_WENABLED (1<<1)    // 1 = Write PCF
 
+// t_i2cCustom.flags:
+#define I2CC_W_ADR_NACK 0
+#define I2CC_W_DAT_NACK 1
+#define I2CC_R_ADR_NACK 2
+#define I2CC_R_DAT_NACK 3
+
 typedef struct {
     uint8_t channel;
     uint8_t i2c_addr;
@@ -47,6 +53,7 @@ typedef struct {
     uint8_t nRead;
     uint8_t *readBuff;
     uint8_t *writeBuff;
+    uint8_t flags;
 } t_i2cCustom;
 
 typedef enum{
@@ -81,10 +88,10 @@ t_pcf_state *get_pcf(t_hw_index *pin);
 void set_bcm(uint8_t *bcmBuffer, uint8_t pin, uint8_t pwmValue);
 // Return PWM value of certain pin from bcmbuffer
 uint8_t get_bcm(uint8_t *bcmBuffer, uint8_t pin);
-// Send byte over i2c and block (no interrupts)
-void i2c_send(uint32_t b, uint8_t addr, uint8_t data);
-// Send byte over i2c and yield (isr & freeRTOS must be setup)
-void i2c_send_yield(uint8_t channel, uint8_t addr, uint8_t data);
+// carry out a custom i2c transaction and yield until done
+void handle_i2c_custom();
+// Send / receive byte over i2c and yield until done (isr & freeRTOS must be setup)
+void i2c_tx_rx_n(uint32_t b, t_i2cCustom *i2c);
 // Wait for all bits to be set in notification value (and clear them)
 void wait_for_noti_bits(uint32_t bits);
 // i2c interrupt service routine

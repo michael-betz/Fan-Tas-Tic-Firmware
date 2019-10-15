@@ -248,7 +248,7 @@ int main(void) {
     xTaskCreate(taskDemoLED, (const portCHAR *)"LEDr", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
 
     // Handle reading / writing I2C bus, fast PWM and switch matrix
-    xTaskCreate(task_pcf_io, (const portCHAR *)"IO", 128, NULL, 1, &hPcfInReader);
+    xTaskCreate(task_pcf_io, (const portCHAR *)"IO", 128, NULL, 2, &hPcfInReader);
 
     // Create USB command parser task
     xTaskCreate(taskUsbCommandParser, (const portCHAR *)"Parser", 128, NULL, 1, &hUSBCommandParser);
