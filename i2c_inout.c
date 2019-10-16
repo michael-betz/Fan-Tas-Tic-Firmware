@@ -20,6 +20,7 @@
 #include "driverlib/rom.h"
 #include "driverlib/interrupt.h"
 #include "my_uartstdio.h"
+#include "utils/ustdlib.h"
 #include "myTasks.h"
 #include "i2c_inout.h"
 
@@ -57,7 +58,7 @@ static unsigned _get_ch(unsigned b)
     return (b - I2C0_BASE) >> 12;
 }
 
-static void i2cUnstucker(uint32_t base, uint8_t pin_SCL, uint8_t pin_SDA){
+static void i2cUnstucker(uint32_t base, uint8_t pin_SCL, uint8_t pin_SDA) {
     //--------------------------
     // Unstuck I2C SDA lines
     //--------------------------
@@ -229,7 +230,7 @@ void wait_for_noti_bits(uint32_t bits)
 // PCFs are read / written.
 void handle_i2c_custom()
 {
-    char *hexStr = NULL;
+    char *hexStr=NULL, *chr=NULL;
     t_i2cCustom i2c;
     // Do up to one transactions per PCF cycle
     if (!xQueueReceive(g_i2c_queue, &i2c, 0))
@@ -245,20 +246,24 @@ void handle_i2c_custom()
     i2c_tx_rx_n(c->base_addr, &i2c);
     c->i2c_state = I2C_IDLE;
 
-    hexStr = buffToHex(i2c.readBuff, i2c.nRead);
-    UARTprintf("I2C%x_RX: %s (%x)\n", i2c.channel, hexStr, i2c.flags);
+    hexStr = pvPortMalloc(2 * i2c.nRead + 24);
+    if (!hexStr) {
+        UARTprintf("handle_i2c_custom(): Could not allocate hexStr buffer!\n");
+        goto handle_i2c_custom_finally;
+    }
+    int temp = usprintf(hexStr, "I2C: %x, %02x", i2c.channel, i2c.flags);
+    chr = &hexStr[temp];
+    if (i2c.nRead) {
+        *chr++ = ',';
+        *chr++ = ' ';
+        chr = buffToHex(i2c.readBuff, i2c.nRead, chr);
+        temp += 2 + 2 * i2c.nRead;
+    }
+    *chr++ = '\n';
+    *chr++ = '\0';
+    temp += 1;
+    ts_usbSend((uint8_t *)hexStr, temp);
 
-    // char *hexString = pvPortMalloc(i2c.nRead * 2 + 1);
-    // uint8_t *val = i2c.readBuff;
-    // char *c = hexString;
-    // if (hexString) {
-    //     for (unsigned i=0; i<i2c.nRead; i++) {
-    //         *c++ = nibbleToHex(*val >> 4);
-    //         *c++ = nibbleToHex(*val++);
-    //     }
-    //     *c = '\0';
-    //     vPortFree(hexString); hexString = NULL;
-    // }
 handle_i2c_custom_finally:
     vPortFree(i2c.readBuff);  i2c.readBuff  = NULL;
     vPortFree(i2c.writeBuff); i2c.writeBuff = NULL;

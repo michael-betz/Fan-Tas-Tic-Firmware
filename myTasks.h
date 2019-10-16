@@ -46,9 +46,8 @@ void ts_usbSend(uint8_t *data, uint16_t len);
 // Make sure to free it after use.
 uint8_t *hexToBuff(char *str, unsigned *nWritten);
 
-// Takes a buffer, returns a hex string
-// Make sure to free it after use.
-char *buffToHex(uint8_t *buf, unsigned len);
-
+// Takes a buffer, writes hex string to dest
+// returns pointer to \0 of \0 terminated string.
+char *buffToHex(uint8_t *buf, unsigned len, char *dest);
 
 #endif /* FAN_TAS_TIC_CONTROLLER_MYTASKS_H_ */

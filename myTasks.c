@@ -668,23 +668,16 @@ uint8_t *hexToBuff(char *str, unsigned *nWritten)
     return buff;
 }
 
-// Takes a buffer, returns a hex string
-// Make sure to free it after use.
-char *buffToHex(uint8_t *buf, unsigned len)
+// Takes a buffer, writes hex string to dest
+// returns pointer to \0 of \0 terminated string.
+char *buffToHex(uint8_t *buf, unsigned len, char *dest)
 {
-    unsigned nChars = len * 2 + 1;
-    char *chars = pvPortMalloc(nChars);
-    if (!chars) {
-        UARTprintf("%22s: pvPortMalloc() failed\n", "buffToHex()");
-        return NULL;
-    }
-    char *c = chars;
     for (unsigned i=0; i<len; i++) {
-        *c++ = nibbleToHex(*buf >> 4);
-        *c++ = nibbleToHex(*buf++);
+        *dest++ = nibbleToHex(*buf >> 4);
+        *dest++ = nibbleToHex(*buf++);
     }
-    *c++ = '\0';
-    return chars;
+    *dest = '\0';
+    return dest;
 }
 
 // Fills up a t_i2cCustom after sanity checking and puts it on the queue

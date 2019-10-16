@@ -438,111 +438,40 @@ UARTStdioConfig(uint32_t ui32PortNum, uint32_t ui32Baud, uint32_t ui32SrcClock)
 //! \return Returns the count of characters written.
 //
 //*****************************************************************************
-int
-UARTwrite(const char *pcBuf, uint32_t ui32Len)
+int UARTwrite(const char *pcBuf, uint32_t ui32Len)
 {
-    if( !globalDebugEnabled ){
+    unsigned uIdx;
+    // Check if debug is enabled at all
+    if (!globalDebugEnabled) {
         return ui32Len;
     }
-#ifdef UART_BUFFERED
-    unsigned int uIdx;
-
-    //
     // Check for valid arguments.
-    //
-    ASSERT(pcBuf != 0);
     ASSERT(g_ui32Base != 0);
 
-    //
-    // Send the characters
-    //
-    for(uIdx = 0; uIdx < ui32Len; uIdx++)
-    {
-        //
-        // If the character to the UART is \n, then add a \r before it so that
-        // \n is translated to \n\r in the output.
-        //
-        if(pcBuf[uIdx] == '\n')
-        {
-            if(!TX_BUFFER_FULL)
-            {
-                g_pcUARTTxBuffer[g_ui32UARTTxWriteIndex] = '\r';
-                ADVANCE_TX_BUFFER_INDEX(g_ui32UARTTxWriteIndex);
-            }
-            else
-            {
-                //
-                // Buffer is full - discard remaining characters and return.
-                //
-                break;
-            }
-        }
-
-        //
+#ifdef UART_BUFFERED
+    for(uIdx=0; uIdx<ui32Len; uIdx++) {
         // Send the character to the UART output.
-        //
-        if(!TX_BUFFER_FULL)
-        {
-            g_pcUARTTxBuffer[g_ui32UARTTxWriteIndex] = pcBuf[uIdx];
-            ADVANCE_TX_BUFFER_INDEX(g_ui32UARTTxWriteIndex);
-        }
-        else
-        {
-            //
-            // Buffer is full - discard remaining characters and return.
-            //
+        if(TX_BUFFER_FULL || (*pcBuf == '\0'))
             break;
-        }
+        g_pcUARTTxBuffer[g_ui32UARTTxWriteIndex] = *pcBuf++;
+        ADVANCE_TX_BUFFER_INDEX(g_ui32UARTTxWriteIndex);
     }
-
-    //
     // If we have anything in the buffer, make sure that the UART is set
     // up to transmit it.
-    //
-    if(!TX_BUFFER_EMPTY)
-    {
+    if(!TX_BUFFER_EMPTY) {
         UARTPrimeTransmit(g_ui32Base);
         MAP_UARTIntEnable(g_ui32Base, UART_INT_TX);
     }
-
-    //
-    // Return the number of characters written.
-    //
-    return(uIdx);
 #else
-    unsigned int uIdx;
-
-    //
-    // Check for valid UART base address, and valid arguments.
-    //
-    ASSERT(g_ui32Base != 0);
-    ASSERT(pcBuf != 0);
-
-    //
-    // Send the characters
-    //
-    for(uIdx = 0; uIdx < ui32Len; uIdx++)
-    {
-        //
-        // If the character to the UART is \n, then add a \r before it so that
-        // \n is translated to \n\r in the output.
-        //
-        if(pcBuf[uIdx] == '\n')
-        {
-            MAP_UARTCharPut(g_ui32Base, '\r');
-        }
-
-        //
+    for(uIdx=0; uIdx<ui32Len; uIdx++) {
+        if(*pcBuf == '\0')
+            break
         // Send the character to the UART output.
-        //
-        MAP_UARTCharPut(g_ui32Base, pcBuf[uIdx]);
+        MAP_UARTCharPut(g_ui32Base, *pcBuf++);
     }
-
-    //
-    // Return the number of characters written.
-    //
-    return(uIdx);
 #endif
+    // Return the number of characters written.
+    return uIdx;
 }
 
 //*****************************************************************************
