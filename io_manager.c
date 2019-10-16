@@ -270,7 +270,7 @@ void task_pcf_io(void *pvParameters)
     xLastWakeTime = xTaskGetTickCount();
     i = 0;
     while (1) {
-        // Wait for 4 x I2C ISR notification (bit 0 - 4 of notification value)
+        // Wait for 4 x I2C ISR notification (bit 0 - 3 of notification value)
         wait_for_noti_bits(0x0F);
         process_IO();
         // unsigned cycles = stopTimer(); UARTprintf("%d cycles, %d us\n", cycles, cycles * 1000ll * 1000 / SYSTEM_CLOCK);

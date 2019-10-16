@@ -148,7 +148,13 @@ static void i2c_state_init(t_i2cChannelState *state, uint32_t base_addr, uint_fa
 // b = base_addr, addr = 7 bit i2c address
 static void stupid_i2c_send(uint32_t b, uint8_t addr, uint8_t data)
 {
-    while (HWREG(b + I2C_O_MCS) & I2C_MCS_BUSY);
+    unsigned i=0;
+    while (HWREG(b + I2C_O_MCS) & I2C_MCS_BUSY); // {
+    //     if (i++ > 0x000FFFFF){
+    //         UARTprintf("stupid_i2c_send(): timeout on ch %x! SCL pullups installed?\n", _get_ch(b));
+    //         return;
+    //     }
+    // }
     HWREG(b + I2C_O_MSA) = (addr << 1) | 0;
     HWREG(b + I2C_O_MDR) = data;
     HWREG(b + I2C_O_MCS) = I2C_MCS_STOP | I2C_MCS_START | I2C_MCS_RUN;
@@ -322,17 +328,15 @@ void i2c_isr(t_i2cChannelState *state)
     ROM_I2CMasterIntClear(b);
     // When the BUSY bit is set, the other I2C status bits are not valid.
     if (mcs & I2C_MCS_BUSY){
-        UARTprintf("<B>");
+        // UARTprintf("<B%x>", _get_ch(b));
         ledOut(0);
         return;
     }
 
-    // UARTprintf(" !%x:%x,%x! ", _get_ch(state->base_addr), state->i2c_state, mcs);
-    // UARTprintf("!%x!", HWREG(b + I2C_O_MRIS));
-
     switch(state->i2c_state){
         case I2C_START:
             // Start a single byte read
+            ledOut(2);
             state->currentPcf = 0;
             pcf = state->pcf_state;
             state->i2c_state = I2C_PCF;
@@ -342,6 +346,7 @@ void i2c_isr(t_i2cChannelState *state)
                 if (state->currentPcf >= PCF_MAX_PER_CHANNEL){
                     // Nothing to do, notify PCF_Reader
                     state->i2c_state = I2C_IDLE;
+                    ledOut(2);
                     _isr_notify(state, &hpw);
                     break;
                 }
@@ -351,6 +356,7 @@ void i2c_isr(t_i2cChannelState *state)
 
         case I2C_PCF:
             // Evaluate result of the single byte read or write
+            ledOut(3);
             pcf = &(state->pcf_state[state->currentPcf]);
             pcf->last_mcs = mcs;
             // Errata I2C#07: DATACK bit is not cleared on read!
@@ -365,6 +371,7 @@ void i2c_isr(t_i2cChannelState *state)
                 state->currentPcf++;
                 if (state->currentPcf >= PCF_MAX_PER_CHANNEL){
                     state->i2c_state = I2C_IDLE;
+                    ledOut(2);
                     _isr_notify(state, &hpw);
                     break;
                 }
@@ -373,7 +380,7 @@ void i2c_isr(t_i2cChannelState *state)
 
         case I2C_CUSTOM:
             // 1 byte has been transmitted / received
-            // UARTprintf("<C%d>", _get_ch(state->base_addr));
+            // UARTprintf("<C%x>", _get_ch(state->base_addr));
             // UARTprintf("<C>");
             _isr_notify(state, &hpw);
             break;
@@ -497,7 +504,7 @@ void trigger_i2c_cycle()
     i2c_cycle++;
     bcm_ticks++;
     // Cycle through the bcm_buffer in a binary way
-    if (bcm_ticks >= (1<<g_bcmIndex)) {
+    if (bcm_ticks >= (1 << g_bcmIndex)) {
         bcm_ticks = 0;
         g_bcmIndex++;
         if(g_bcmIndex >= N_BIT_PWM){
@@ -517,8 +524,11 @@ void trigger_i2c_cycle()
                 pcf++;
             }
         }
+        // ledOut(2);
+        // ledOut(0);
         IntTrigger(s->int_addr);
         s++;
+        // break;
     }
 }
 
