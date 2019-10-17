@@ -239,7 +239,7 @@ void handle_i2c_custom()
         UARTprintf("handle_i2c_custom(): Could not allocate hexStr buffer!\n");
         goto handle_i2c_custom_finally;
     }
-    int temp = usprintf(hexStr, "I2C: %x, %02x", i2c.channel, i2c.flags);
+    int temp = usprintf(hexStr, "I2: %x, %02x", i2c.channel, i2c.flags);
     chr = &hexStr[temp];
     if (i2c.nRead) {
         *chr++ = ',';
