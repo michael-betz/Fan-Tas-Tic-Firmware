@@ -33,11 +33,11 @@ typedef struct {
     int32_t nLEDBytesLeft;      //refers to data from g_spiBuffer
     // DMA stuff
     t_spiDmaState state;
-    uint16_t pingBuffer[SPI_DMA_BUFFER_SIZE];   //1 ms worth of SPI data
-    uint16_t pongBuffer[SPI_DMA_BUFFER_SIZE];   //1 ms worth of SPI data
+    uint16_t pingBuffer[SPI_DMA_BUFFER_SIZE];   // 1 ms worth of SPI data
+    uint16_t pongBuffer[SPI_DMA_BUFFER_SIZE];   // 1 ms worth of SPI data
     // Freertos stuff
     SemaphoreHandle_t semaToReleaseWhenFinished;
-}t_spiTransferState;
+} t_spiTransferState;
 
 //*****************************************************************************
 // Global vars

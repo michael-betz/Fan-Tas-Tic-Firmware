@@ -241,7 +241,6 @@ static void process_IO()
     if (g_reportSwitchEvents) reportSwitchStates();
     handleBitRules(DEBOUNCER_READ_PERIOD);
     processQuickRules();
-    handle_i2c_custom();
     if (g_reDiscover) {
         g_reDiscover = 0;
         for (i=0; i<MAX_QUICK_RULES; i++) disableQuickRule(i);
@@ -275,18 +274,21 @@ void task_pcf_io(void *pvParameters)
     xLastWakeTime = xTaskGetTickCount();
     i = 0;
     while (1) {
-        // Wait for 4 x I2C ISR notification (bit 0 - 3 of notification value)
-        wait_for_noti_bits(0x0F);
+        // Wait for all 4 x I2C channel ISRs to complete
+        xTaskNotifyWait(0, 0, NULL, portMAX_DELAY);
+        // ledOut(2);
         process_IO();
-        // unsigned cycles = stopTimer(); UARTprintf("%d cycles, %d us\n", cycles, cycles * 1000ll * 1000 / SYSTEM_CLOCK);
+        handle_i2c_custom();
         //Run every 1 ms --> 4 ms debounce latency
         vTaskDelayUntil(&xLastWakeTime, DEBOUNCER_READ_PERIOD / portTICK_PERIOD_MS);
         // vTaskDelayUntil(&xLastWakeTime, 3000);
-        //Start background I2C scanner (takes ~ 400 us)
-        // startTimer();
+        // ledOut(0);
+        //Start background I2C scanner (takes ~ 400 us with all channels fully loaded)
         trigger_i2c_cycle();
-        //Should take >= 500 us as it happens in parallel with the I2C scan
-        readSwitchMatrix();  // 32965 cycles, 412 us
+        // happens in parallel with the I2C scan so should take about the same time
+        // startTimer();
+        readSwitchMatrix();  // 317 us
+        // unsigned cycles = stopTimer(); UARTprintf("%d cycles, %d us\n", cycles, cycles * 1000ll * 1000 / SYSTEM_CLOCK);
         i++;
     }
 }

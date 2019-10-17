@@ -35,26 +35,26 @@
 // \return The return value is event-specific.
 //*****************************************************************************
 uint32_t ControlHandler(void *pvCBData, uint32_t ui32Event, uint32_t ui32MsgValue, void *pvMsgData) {
-    switch(ui32Event) {									// We are connected to a host and communication is now possible.
-        case USB_EVENT_CONNECTED:						// Flush our buffers.
+    switch(ui32Event) {                                 // We are connected to a host and communication is now possible.
+        case USB_EVENT_CONNECTED:                       // Flush our buffers.
             USBBufferFlush(&g_sTxBuffer);
             USBBufferFlush(&g_sRxBuffer);
             UARTprintf("%22s: USB connected\n", "ControlHandler()");
             break;
-        case USB_EVENT_DISCONNECTED:					// The host has disconnected.
+        case USB_EVENT_DISCONNECTED:                    // The host has disconnected.
             UARTprintf("%22s: USB disconnected\n", "ControlHandler()");
             break;
-        case USBD_CDC_EVENT_GET_LINE_CODING:			// Return the current serial communication parameters.
-        case USBD_CDC_EVENT_SET_LINE_CODING:			// Set the current serial communication parameters.
-        case USBD_CDC_EVENT_SET_CONTROL_LINE_STATE:		// Set the current serial communication parameters.
-        case USBD_CDC_EVENT_SEND_BREAK:					// Send a break condition on the serial line.
-        case USBD_CDC_EVENT_CLEAR_BREAK:				// Clear the break condition on the serial line.
+        case USBD_CDC_EVENT_GET_LINE_CODING:            // Return the current serial communication parameters.
+        case USBD_CDC_EVENT_SET_LINE_CODING:            // Set the current serial communication parameters.
+        case USBD_CDC_EVENT_SET_CONTROL_LINE_STATE:     // Set the current serial communication parameters.
+        case USBD_CDC_EVENT_SEND_BREAK:                 // Send a break condition on the serial line.
+        case USBD_CDC_EVENT_CLEAR_BREAK:                // Clear the break condition on the serial line.
         case USB_EVENT_SUSPEND:
         case USB_EVENT_RESUME:
             break;
         default:   // We don't expect to receive any other events.  Ignore any that show but hang in a debug build.
 #ifdef DEBUG
-        	UARTprintf("ControlHandler( %d ) ... Unexpected ... hang()\n", ui32Event );
+            UARTprintf("ControlHandler( %d ) ... Unexpected ... hang()\n", ui32Event );
             while(1);
 #else
             break;
@@ -76,8 +76,8 @@ uint32_t ControlHandler(void *pvCBData, uint32_t ui32Event, uint32_t ui32MsgValu
 // \return The return value is event-specific.
 //*****************************************************************************
 uint32_t TxHandler(void *pvCBData, uint32_t ui32Event, uint32_t ui32MsgValue, void *pvMsgData ){
-    switch(ui32Event) {					// Which event have we been sent?
-        case USB_EVENT_TX_COMPLETE:		// Since we are using the USBBuffer, we don't need to do anything here.
+    switch(ui32Event) {                 // Which event have we been sent?
+        case USB_EVENT_TX_COMPLETE:     // Since we are using the USBBuffer, we don't need to do anything here.
             break;
         default:   // We don't expect to receive any other events.  Ignore any that show but hang in a debug build.
 #ifdef DEBUG
@@ -101,24 +101,24 @@ uint32_t TxHandler(void *pvCBData, uint32_t ui32Event, uint32_t ui32MsgValue, vo
 // data from the USB host).
 // \return The return value is event-specific.
 //*****************************************************************************
-uint32_t RxHandler( void *pvCBData, uint32_t ui32Event, uint32_t ui32MsgValue, void *pvMsgData ) {
-	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    switch(ui32Event){					// Which event are we being sent?
-        case USB_EVENT_RX_AVAILABLE:	// A new packet has been received.  Notify and wake up parser task
-        	 vTaskNotifyGiveFromISR( hUSBCommandParser, &xHigherPriorityTaskWoken );
-        	 portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
-		break;
+uint32_t RxHandler(void *pvCBData, uint32_t ui32Event, uint32_t ui32MsgValue, void *pvMsgData) {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    switch(ui32Event){                  // Which event are we being sent?
+        case USB_EVENT_RX_AVAILABLE:    // A new packet has been received.  Notify and wake up parser task
+             vTaskNotifyGiveFromISR(hUSBCommandParser, &xHigherPriorityTaskWoken);
+             portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        break;
         // We are being asked how much unprocessed data we have still to
         // process. We return 0 if the command parser is IDLE or 1 if it is
         // in the process of parsing something.
         case USB_EVENT_DATA_REMAINING:
-//        	UARTprintf(" USB_EVENT_DATA_REMAINING ");
-        	return( USBBufferDataAvailable(&g_sRxBuffer) );
-        case USB_EVENT_REQUEST_BUFFER:			// We are being asked to provide a buffer into which the next packet
-//        	UARTprintf(" USB_EVENT_REQUEST_BUFFER ");
-            return(0);
+//          UARTprintf(" USB_EVENT_DATA_REMAINING ");
+            return (USBBufferDataAvailable(&g_sRxBuffer));
+        case USB_EVENT_REQUEST_BUFFER:          // We are being asked to provide a buffer into which the next packet
+//          UARTprintf(" USB_EVENT_REQUEST_BUFFER ");
+            return (0);
 
-        default:		// We don't expect to receive any other events.  Ignore any that show but hang in a debug build.
+        default:        // We don't expect to receive any other events.  Ignore any that show but hang in a debug build.
 #ifdef DEBUG
             while(1);
 #else

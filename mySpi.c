@@ -179,7 +179,8 @@ uint8_t *fillPiongBuffer( uint8_t *srcPointer, uint16_t *destPointer, int32_t *n
     return srcPointer;
 }
 
-void spiISR(uint8_t channel){
+void spiISR(uint8_t channel)
+{
     //Is called by uDMA interrupt after one block has been transferred! (takes 640 us)
     //It takes < 50 us to refresh a buffer
     uint32_t temp;
@@ -190,7 +191,7 @@ void spiISR(uint8_t channel){
     // UARTprintf("I%xI", channel);
     // Make sure the previous DMA transfer has finished. Else something fishy is going on
     ASSERT( !ROM_uDMAChannelIsEnabled(state->dmaChannel) );
-    switch( state->state ){
+    switch(state->state) {
     case SPI_SEND_PING:
         //---------------------------------------------
         //Send PING buffer, recharge PONG buffer
@@ -238,7 +239,7 @@ void spiISR(uint8_t channel){
         return;
 
     case SPI_IDLE:
-        xSemaphoreGiveFromISR( state->semaToReleaseWhenFinished, NULL );
+        xSemaphoreGiveFromISR(state->semaToReleaseWhenFinished, NULL);
         return;
 
     default:

@@ -12,7 +12,7 @@
 // So each delay call should do ... delay units:
 // (40000 - 530)/54/3 = 244
 // 200 --> Switch matrix has ~ 8 us to settle
-#define SM_COL_DELAY_CNT 75
+#define SM_COL_DELAY_CNT 60
 
 void readSwitchMatrix();
 

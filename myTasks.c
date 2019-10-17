@@ -161,16 +161,16 @@ void taskUsbCommandParser( void *pvParameters ) {
     uint8_t *spiWritePointer;                                   // Points to first free place in spiBuffer
     t_usbParserMode currentMode = PARS_MODE_ASCII;
     while (1) {
-        switch( currentMode ){
+        switch (currentMode) {
         case PARS_MODE_ASCII:
             // -----------------------------------------------------------
             //  Check if there is any data in the buffer to process
             // -----------------------------------------------------------
-            if( remainderSize == 0 ){                           // There's no unprocessed data in the buffer
-                while( !USBBufferDataAvailable(&g_sRxBuffer) ){
-                    ulTaskNotifyTake( pdTRUE, portMAX_DELAY);   // Wait for receiving new serial data over USB
-                }                                               // Here we must have new data in any case
-                tempCharsRead = USBBufferRead(&g_sRxBuffer, writePointer, CMD_PARSER_BUF_LEN-nCharsRead-1 );
+            if (remainderSize == 0) {                           // There's no unprocessed data in the buffer
+                while (!USBBufferDataAvailable(&g_sRxBuffer)) {
+                    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);   // Wait for receiving new serial data over USB
+                }                                              // Here we must have new data in any case
+                tempCharsRead = USBBufferRead(&g_sRxBuffer, writePointer, CMD_PARSER_BUF_LEN - nCharsRead - 1);
 //                UARTwrite( writePointer, tempCharsRead );
                 writePointer += tempCharsRead;
                 remainderSize += tempCharsRead;                 // How many chars to process
@@ -178,12 +178,12 @@ void taskUsbCommandParser( void *pvParameters ) {
             // -----------------------------------------------------------
             //  Wait for a EOL character, then parse the substring
             // -----------------------------------------------------------
-            retVal = eolSearch( readPointer, remainderSize );
-            if( retVal > -1 ){                                              //EOL was found in new chars
+            retVal = eolSearch(readPointer, remainderSize);
+            if (retVal > -1) {                                              //EOL was found in new chars
                 readPointer += retVal + 1;                                  //Points to the first remainder char after the found EOL char
                 remainderSize -= retVal + 1;                                //Length of the remainder after the CMD
                 //Parse cmd from beginning of charBuffer
-                if( cmdParse( charBuffer, nCharsRead + retVal ) == PARS_MODE_BIN_LED ){
+                if (cmdParse(charBuffer, nCharsRead + retVal) == PARS_MODE_BIN_LED) {
                     // cmdParse might enable PARS_MODE_BIN_LED
                     // cmdParse calls CMD_LED, which will wait until a previous send on this channel is finished
                     // -----------------------------------------------------------
@@ -192,8 +192,8 @@ void taskUsbCommandParser( void *pvParameters ) {
                     currentMode = PARS_MODE_BIN_LED;
                     //Okay we need to copy the remainder from the charBuffer into the SPI buffer
                     nCharsRead = MIN(remainderSize, g_LEDnBytesToCopy);      //How many chars to copy? remainder might contain more commands!
-                    memcpy( g_spiBuffer[ g_LEDChannel ], readPointer, nCharsRead );
-                    spiWritePointer= &g_spiBuffer[g_LEDChannel][nCharsRead];//Points to next free char in spiBuffer
+                    memcpy(g_spiBuffer[g_LEDChannel], readPointer, nCharsRead);
+                    spiWritePointer = &g_spiBuffer[g_LEDChannel][nCharsRead];//Points to next free char in spiBuffer
                     readPointer += nCharsRead;
                     remainderSize -= nCharsRead;                            //This is the remainder after taking the LED data out
                                                                             //Might not be zero if multiple commands are in charBuffer!
@@ -235,15 +235,15 @@ void taskUsbCommandParser( void *pvParameters ) {
             //  simply take g_LEDnBytesToCopy bytes from USB and put them
             //  in the spiBuffer
             // -----------------------------------------------------------
-            if( nCharsRead < g_LEDnBytesToCopy ){       //If there was not enough data in the remainder, get more over USB
-                ASSERT( remainderSize == 0 );           //Remainder must be empty before we take data from USB
-                tempCharsRead = USBBufferRead(&g_sRxBuffer, spiWritePointer, g_LEDnBytesToCopy-nCharsRead );
+            if(nCharsRead < g_LEDnBytesToCopy) {       //If there was not enough data in the remainder, get more over USB
+                ASSERT(remainderSize == 0);           //Remainder must be empty before we take data from USB
+                tempCharsRead = USBBufferRead(&g_sRxBuffer, spiWritePointer, g_LEDnBytesToCopy - nCharsRead);
                 spiWritePointer += tempCharsRead;
                 nCharsRead += tempCharsRead;
             }
-            if( nCharsRead >= g_LEDnBytesToCopy ){      //Are we good already?
+            if(nCharsRead >= g_LEDnBytesToCopy) {      // Are we good already?
                 spiSend(g_LEDChannel, g_LEDnBytesToCopy);
-//                xSemaphoreGive( g_spiState[g_LEDChannel].semaToReleaseWhenFinished );
+                // xSemaphoreGive(g_spiState[g_LEDChannel].semaToReleaseWhenFinished);
                 nCharsRead = 0;
                 currentMode = PARS_MODE_ASCII;
             }
@@ -586,42 +586,40 @@ int Cmd_LEC(int argc, char *argv[]) {   //Here we need re - initialize the SPI m
     return 0;
 }
 
-
-int Cmd_LED(int argc, char *argv[]) {   //Here we need to switch the serialCommandParser to Binary mode
+//Here we need to switch the serialCommandParser to Binary mode
+int Cmd_LED(int argc, char *argv[])
+{
     //LED 0 128\nxxxxxx
-    uint8_t channel;
-    uint32_t blobSize;
-    if( argc==3 ){
-        channel = ustrtoul(argv[1], NULL, 0);
-        if( channel <= 2 ){
-            blobSize = ustrtoul(argv[2], NULL, 0);
-            if( blobSize%3 || blobSize>N_LEDS_MAX*3 ){
-                REPORT_ERROR( "ER:001A\n" );
-                UARTprintf("%22s: Invalid number of bytes (%d)\n", "Cmd_LED()", blobSize);
-                return 0;
-            }
-//            UARTprintf("Blasting %d bytes of data to LED string on channel %d\n", blobSize, channel);
-            //-------------------------
-            // Lock the SPI channel
-            //-------------------------
-            t_spiTransferState *state = &g_spiState[channel];
-            if( xSemaphoreTake( state->semaToReleaseWhenFinished, 1000 ) ){
-                g_LEDnBytesToCopy = blobSize;   //We got the Lock, start copy process
-                g_LEDChannel = channel;
-                return PARS_MODE_BIN_LED;
-            } else {
-                REPORT_ERROR( "ER:001B\n" );
-                UARTprintf("%22s: Timeout, could not access sendBuffer %d\n", "spiSend()", channel);
-            }
-        } else {
-            REPORT_ERROR( "ER:001C\n" );
-            UARTprintf("%22s: Invalid LED channel (%d)\n", "Cmd_LED()", channel);
-        }
-    } else {
+    unsigned channel, blobSize;
+    if(argc != 3) {
         REPORT_ERROR( "ER:001D\n" );
         UARTprintf("%22s: Invalid number of arguments (%d)\n", "Cmd_LED()", argc);
+        return 0;
     }
-    return( 0 );
+    channel = ustrtoul(argv[1], NULL, 0);
+    if (channel > 2) {
+        REPORT_ERROR( "ER:001C\n" );
+        UARTprintf("%22s: Invalid LED channel (%d)\n", "Cmd_LED()", channel);
+        return 0;
+    }
+    blobSize = ustrtoul(argv[2], NULL, 0);
+    if((blobSize % 3) || (blobSize > N_LEDS_MAX * 3)) {
+        REPORT_ERROR("ER:001A\n");
+        UARTprintf("%22s: Invalid number of bytes (%d)\n", "Cmd_LED()", blobSize);
+        return 0;
+    }
+    //-------------------------
+    // Lock the SPI channel
+    //-------------------------
+    t_spiTransferState *state = &g_spiState[channel];
+    if(!xSemaphoreTake(state->semaToReleaseWhenFinished, 1000)) {
+        REPORT_ERROR( "ER:001B\n" );
+        UARTprintf("%22s: Timeout, could not access sendBuffer %d\n", "spiSend()", channel);
+        return 0;
+    }
+    g_LEDnBytesToCopy = blobSize;   //We got the Lock, start copy process
+    g_LEDChannel = channel;
+    return PARS_MODE_BIN_LED;
 }
 
 static uint8_t hexToNibble(char hexChar)

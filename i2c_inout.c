@@ -34,24 +34,10 @@ static unsigned g_bcmIndex = 0;
 // Counts how many PCM cycles have been triggered
 static unsigned g_i2c_cycle = 0;
 
-// To wait for all channels to finish
-// static EventGroupHandle_t i2c_flags = NULL;
-
-void i2CIntHandler0(void) {
-    i2c_isr(&g_sI2CInst[0]);
-}
-
-void i2CIntHandler1(void) {
-    i2c_isr(&g_sI2CInst[1]);
-}
-
-void i2CIntHandler2(void) {
-    i2c_isr(&g_sI2CInst[2]);
-}
-
-void i2CIntHandler3(void) {
-    i2c_isr(&g_sI2CInst[3]);
-}
+void i2CIntHandler0(void) {i2c_isr(0);}
+void i2CIntHandler1(void) {i2c_isr(1);}
+void i2CIntHandler2(void) {i2c_isr(2);}
+void i2CIntHandler3(void) {i2c_isr(3);}
 
 // Get i2c channel from base_addr
 static unsigned _get_ch(unsigned b)
@@ -193,7 +179,7 @@ void i2c_tx_rx_n(uint32_t b, t_i2cCustom *i2c)
                 tempFlags |= I2C_MCS_STOP;
             HWREG(b + I2C_O_MDR) = *tx_data++;
             HWREG(b + I2C_O_MCS) = tempFlags;
-            wait_for_noti_bits(1 << _get_ch(b));
+            xTaskNotifyWait(0, 0, NULL, portMAX_DELAY);
             ledOut(2);
             ledOut(0);
             mcs = HWREG(b + I2C_O_MCS);
@@ -216,7 +202,7 @@ void i2c_tx_rx_n(uint32_t b, t_i2cCustom *i2c)
             else
                 tempFlags |= I2C_MCS_ACK;
             HWREG(b + I2C_O_MCS) = tempFlags;
-            wait_for_noti_bits(1 << _get_ch(b));
+            xTaskNotifyWait(0, 0, NULL, portMAX_DELAY);
             ledOut(2);
             ledOut(0);
             *rx_data++ = HWREG(b + I2C_O_MDR);
@@ -224,16 +210,6 @@ void i2c_tx_rx_n(uint32_t b, t_i2cCustom *i2c)
             i2c->flags |= ((mcs >> I2C_MCS_ADRACK) << 2) & 0x0C;
         }
     }
-}
-
-// Wait for all bits to be set in notification value (and clear them)
-void wait_for_noti_bits(uint32_t bits)
-{
-    uint32_t noti_new, noti_ored = 0;
-    do {
-        xTaskNotifyWait(0, bits, &noti_new, portMAX_DELAY); //1000 / portTICK_PERIOD_MS
-        noti_ored |= noti_new;
-    } while ((bits & noti_ored) != bits);
 }
 
 // carry out a custom i2c transaction and yield until done
@@ -316,28 +292,25 @@ static bool setup_pcf_rw(unsigned b, t_pcf_state *pcf)
 // When the ISR is done, the pcfInReader task is notified
 // the bit corresponding to its CH# is set in the task noti. value
 // When all 4 bits are set, the task continues
-static void _isr_notify(t_i2cChannelState *state, BaseType_t *hpw)
+static void _isr_notify(unsigned flags, BaseType_t *hpw)
 {
-    xTaskNotifyFromISR(
-        hPcfInReader,
-        1 << _get_ch(state->base_addr),
-        eSetBits,
-        hpw
-    );
-    // xEventGroupSetBitsFromISR(
-    //     i2c_flags,
-    //     1 << _get_ch(state->base_addr),
-    //     hpw
-    // );
+    // indicates Which channels are done
+    static volatile unsigned isrFlags=0;
+    isrFlags |= flags;
+    if (isrFlags == 0x0F) {
+        isrFlags = 0;
+        xTaskNotifyFromISR(hPcfInReader, 0, eNoAction, hpw);
+    }
 }
 
-void i2c_isr(t_i2cChannelState *state)
+void i2c_isr(unsigned channel)
 {
     // # Interrupt sources
     //   * Master transaction completed
     //   * Master arbitration lost
     //   * Master transaction error
     //   * Master bus timeout
+    t_i2cChannelState *state = &g_sI2CInst[channel];
     BaseType_t hpw = pdFALSE;  // true if returning to a higher prio task
     unsigned b = state->base_addr;
     unsigned mcs = HWREG(b + I2C_O_MCS);  // read clears status bits!!!
@@ -347,7 +320,8 @@ void i2c_isr(t_i2cChannelState *state)
 
     if (mcs & I2C_MCS_BUSY) {
         // When the BUSY bit is set, the other I2C status bits are not valid.
-        // UARTprintf("<B%x>", _get_ch(b));
+        // Actually this gets triggered on ADR_ACK error!
+        // UARTprintf("<%x>", mcs);
         ledOut(0);
         return;
     }
@@ -359,12 +333,12 @@ void i2c_isr(t_i2cChannelState *state)
             state->currentPcf = 0;
             pcf = state->pcf_state;
             // Setup first read or write
-            while(!setup_pcf_rw(b, pcf)){
+            while(!setup_pcf_rw(b, pcf)) {
                 state->currentPcf++;
                 if (state->currentPcf >= PCF_MAX_PER_CHANNEL){
                     // Nothing to do, notify PCF_Reader
                     state->i2c_state = I2C_IDLE;
-                    _isr_notify(state, &hpw);
+                    _isr_notify((1 << channel), &hpw);
                     break;
                 }
                 pcf++;
@@ -390,8 +364,7 @@ void i2c_isr(t_i2cChannelState *state)
                 state->currentPcf++;
                 if (state->currentPcf >= PCF_MAX_PER_CHANNEL){
                     state->i2c_state = I2C_IDLE;
-                    ledOut(2);
-                    _isr_notify(state, &hpw);
+                    _isr_notify((1 << channel), &hpw);
                     break;
                 }
             } while (!setup_pcf_rw(b, ++pcf));
@@ -399,13 +372,12 @@ void i2c_isr(t_i2cChannelState *state)
 
         case I2C_CUSTOM:
             // 1 byte has been transmitted / received
-            // UARTprintf("<C%x>", _get_ch(state->base_addr));
             // UARTprintf("<C>");
-            _isr_notify(state, &hpw);
+            _isr_notify(0x0F, &hpw);
             break;
 
         case I2C_IDLE:
-            // UARTprintf("<I>");
+            UARTprintf("<I>");
             break;
 
         default:
@@ -476,10 +448,6 @@ void init_i2c_system(bool isr_init) {
     init_i2c_gpio(GPIO_PORTA_BASE, (1 << 7), (1 << 6));  // I2C1
     init_i2c_gpio(GPIO_PORTE_BASE, (1 << 5), (1 << 4));  // I2C2
     init_i2c_gpio(GPIO_PORTD_BASE, (1 << 1), (1 << 0));  // I2C3
-
-    GPIOPinTypeI2CSCL(GPIO_PORTB_BASE, GPIO_PIN_2); //I2C0
-    GPIOPinTypeI2C(   GPIO_PORTB_BASE, GPIO_PIN_3);
-
 
     // Initialize the I2C master module for 400 kHz
     ROM_I2CMasterInitExpClk(I2C0_BASE, SYSTEM_CLOCK, true);

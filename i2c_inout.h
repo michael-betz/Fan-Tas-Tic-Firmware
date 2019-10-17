@@ -95,7 +95,7 @@ void i2c_tx_rx_n(uint32_t b, t_i2cCustom *i2c);
 // Wait for all bits to be set in notification value (and clear them)
 void wait_for_noti_bits(uint32_t bits);
 // i2c interrupt service routine
-void i2c_isr(t_i2cChannelState *state);
+void i2c_isr(unsigned channel);
 // these just call i2c_isr with the right arg
 void i2CIntHandler0(void);
 void i2CIntHandler1(void);
