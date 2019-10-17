@@ -13,6 +13,7 @@
 #include "inc/hw_types.h"
 #include "inc/hw_ints.h"
 #include "inc/hw_i2c.h"
+#include "inc/hw_gpio.h"
 #include "driverlib/i2c.h"
 #include "driverlib/pin_map.h"
 #include "driverlib/gpio.h"
@@ -31,7 +32,7 @@ t_i2cChannelState g_sI2CInst[4];
 // set by trigger_i2c_cycle()
 static unsigned g_bcmIndex = 0;
 // Counts how many PCM cycles have been triggered
-static unsigned i2c_cycle = 0;
+static unsigned g_i2c_cycle = 0;
 
 // To wait for all channels to finish
 // static EventGroupHandle_t i2c_flags = NULL;
@@ -139,9 +140,14 @@ static void i2c_state_init(t_i2cChannelState *state, uint32_t base_addr, uint_fa
         pcf->i2c_addr = PCF_LOWEST_ADDR + i;
         pcf++;
     }
+    // Timeout cycles for a stuck low SCL line (times 16)
+    HWREG(base_addr + I2C_O_MCLKOCNT) = 32 >> 4;
     IntPendClear(int_addr);
     IntEnable(int_addr);
-    ROM_I2CMasterIntEnableEx(base_addr, I2C_MASTER_INT_DATA);
+    ROM_I2CMasterIntEnableEx(
+        base_addr,
+        I2C_MASTER_INT_DATA | I2C_MASTER_INT_NACK | I2C_MASTER_INT_TIMEOUT
+    );
 }
 
 // Send byte over i2c and block (no interrupts)
@@ -149,12 +155,12 @@ static void i2c_state_init(t_i2cChannelState *state, uint32_t base_addr, uint_fa
 static void stupid_i2c_send(uint32_t b, uint8_t addr, uint8_t data)
 {
     unsigned i=0;
-    while (HWREG(b + I2C_O_MCS) & I2C_MCS_BUSY); // {
-    //     if (i++ > 0x000FFFFF){
-    //         UARTprintf("stupid_i2c_send(): timeout on ch %x! SCL pullups installed?\n", _get_ch(b));
-    //         return;
-    //     }
-    // }
+    while (HWREG(b + I2C_O_MCS) & I2C_MCS_BUSY) {
+        if (i++ > 0x0000FFFF) {
+            UARTprintf("stupid_i2c_send(): timeout on ch %x! SDA pullups installed?\n", _get_ch(b));
+            return;
+        }
+    }
     HWREG(b + I2C_O_MSA) = (addr << 1) | 0;
     HWREG(b + I2C_O_MDR) = data;
     HWREG(b + I2C_O_MCS) = I2C_MCS_STOP | I2C_MCS_START | I2C_MCS_RUN;
@@ -280,18 +286,26 @@ handle_i2c_custom_finally:
 // Returns true if a read or write has been started
 static bool setup_pcf_rw(unsigned b, t_pcf_state *pcf)
 {
-    if (pcf->flags & FPCF_WENABLED){
+    if (pcf->flags & (FPCF_WENABLED | FPCF_RENABLED)) {
+        // If bus is busy or I2C master is already busy,
+        // don't start a new transaction
+        if(HWREG(b + I2C_O_MCS) & (I2C_MCS_BUSBSY | I2C_MCS_BUSY)) {
+            UARTprintf("setup_pcf_rw(): busy error\n");
+            return false;
+        }
+    }
+    if (pcf->flags & FPCF_WENABLED) {
         // UARTprintf(" W%2x ", pcf->i2c_addr);
         HWREG(b + I2C_O_MSA) = (pcf->i2c_addr << 1) | 0;
         HWREG(b + I2C_O_MDR) = pcf->bcm_buffer[g_bcmIndex];
         HWREG(b + I2C_O_MCS) = I2C_MCS_STOP | I2C_MCS_START | I2C_MCS_RUN;
         return true;
     }
-    if (pcf->flags & FPCF_RENABLED){
+    if (pcf->flags & FPCF_RENABLED) {
         // START condition followed by RECEIVE and STOP condition
         // (master remains in Idle state).
         // UARTprintf(" R%2x ", pcf->i2c_addr);
-        HWREG(b + I2C_O_MSA) = (pcf->i2c_addr<<1) | 1;
+        HWREG(b + I2C_O_MSA) = (pcf->i2c_addr << 1) | 1;
         HWREG(b + I2C_O_MCS) = I2C_MCS_STOP | I2C_MCS_START | I2C_MCS_RUN;
         return true;
     }
@@ -319,15 +333,20 @@ static void _isr_notify(t_i2cChannelState *state, BaseType_t *hpw)
 
 void i2c_isr(t_i2cChannelState *state)
 {
-    // true if we should return to a higher prio task
-    BaseType_t hpw = pdFALSE;
+    // # Interrupt sources
+    //   * Master transaction completed
+    //   * Master arbitration lost
+    //   * Master transaction error
+    //   * Master bus timeout
+    BaseType_t hpw = pdFALSE;  // true if returning to a higher prio task
     unsigned b = state->base_addr;
-    unsigned mcs = HWREG(b + I2C_O_MCS);
+    unsigned mcs = HWREG(b + I2C_O_MCS);  // read clears status bits!!!
     t_pcf_state *pcf;
     ledOut(1);
     ROM_I2CMasterIntClear(b);
-    // When the BUSY bit is set, the other I2C status bits are not valid.
-    if (mcs & I2C_MCS_BUSY){
+
+    if (mcs & I2C_MCS_BUSY) {
+        // When the BUSY bit is set, the other I2C status bits are not valid.
         // UARTprintf("<B%x>", _get_ch(b));
         ledOut(0);
         return;
@@ -339,19 +358,18 @@ void i2c_isr(t_i2cChannelState *state)
             ledOut(2);
             state->currentPcf = 0;
             pcf = state->pcf_state;
-            state->i2c_state = I2C_PCF;
             // Setup first read or write
             while(!setup_pcf_rw(b, pcf)){
                 state->currentPcf++;
                 if (state->currentPcf >= PCF_MAX_PER_CHANNEL){
                     // Nothing to do, notify PCF_Reader
                     state->i2c_state = I2C_IDLE;
-                    ledOut(2);
                     _isr_notify(state, &hpw);
                     break;
                 }
                 pcf++;
             }
+            state->i2c_state = I2C_PCF;
             break;
 
         case I2C_PCF:
@@ -359,11 +377,12 @@ void i2c_isr(t_i2cChannelState *state)
             ledOut(3);
             pcf = &(state->pcf_state[state->currentPcf]);
             pcf->last_mcs = mcs;
+            // Check error bits and increment error counter
             // Errata I2C#07: DATACK bit is not cleared on read!
-            if (mcs & (I2C_MCS_ADRACK | I2C_MCS_ARBLST)) {
+            if (mcs & (I2C_MCS_ADRACK | I2C_MCS_ARBLST | I2C_MCS_CLKTO)) {
                 pcf->err_cnt++;
-            } else if (pcf->value_target && (pcf->flags & FPCF_RENABLED)){
-                // pcf->value = HWREG(b + I2C_O_MDR);
+            } else if (pcf->value_target && (pcf->flags & FPCF_RENABLED)) {
+                // No error, take read data value and store it
                 *(pcf->value_target) = HWREG(b + I2C_O_MDR);
             }
             // Setup next read or write
@@ -397,15 +416,21 @@ void i2c_isr(t_i2cChannelState *state)
     ledOut(0);
 }
 
+static void init_i2c_gpio(unsigned b, unsigned sda, unsigned scl)
+{
+    // see Table 10-3, p. 657
+    // in http://www.ti.com/lit/ds/symlink/tm4c123gh6pm.pdf
+    HWREG(b + GPIO_O_AFSEL) |= scl | sda;  // Alternate function select
+    HWREG(b + GPIO_O_ODR) |= sda;          // Open drain mode
+    HWREG(b + GPIO_O_DEN) |= scl | sda;    // Digital enable
+    HWREG(b + GPIO_O_DR8R) |= scl | sda;   // 8 mA drive strength
+    HWREG(b + GPIO_O_PUR) |= scl | sda;    // Weak pullup enabled
+}
+
 // Resets GPIO and I2C hardware
-// isr_init = false: also send 0x00 to all PCFs
-// isr_init = true:  also init data structures and interrupts
+// isr_init = false: send 0x00 to all PCFs
+// isr_init = true:  init data structures and interrupts
 void init_i2c_system(bool isr_init) {
-    // using multiple task notifications turned out to be
-    // significantly faster than eventgroups
-    // if (!i2c_flags) {
-    //     i2c_flags = xEventGroupCreate();
-    // }
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);   //I2C0
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);   //I2C1
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);   //I2C2
@@ -447,19 +472,14 @@ void init_i2c_system(bool isr_init) {
     // configure the GPIO pins for I2C operation, setting them to
     // open-drain operation with weak pull-ups.  Consult the data sheet
     // to see which functions are allocated per pin.
-    ROM_GPIOPinTypeI2CSCL(GPIO_PORTB_BASE, GPIO_PIN_2); //I2C0
-    ROM_GPIOPinTypeI2C(   GPIO_PORTB_BASE, GPIO_PIN_3);
-    ROM_GPIOPinTypeI2CSCL(GPIO_PORTA_BASE, GPIO_PIN_6); //I2C1
-    ROM_GPIOPinTypeI2C(   GPIO_PORTA_BASE, GPIO_PIN_7);
-    ROM_GPIOPinTypeI2CSCL(GPIO_PORTE_BASE, GPIO_PIN_4); //I2C2
-    ROM_GPIOPinTypeI2C(   GPIO_PORTE_BASE, GPIO_PIN_5);
-    ROM_GPIOPinTypeI2CSCL(GPIO_PORTD_BASE, GPIO_PIN_0); //I2C3
-    ROM_GPIOPinTypeI2C(   GPIO_PORTD_BASE, GPIO_PIN_1);
+    init_i2c_gpio(GPIO_PORTB_BASE, (1 << 3), (1 << 2));  // I2C0
+    init_i2c_gpio(GPIO_PORTA_BASE, (1 << 7), (1 << 6));  // I2C1
+    init_i2c_gpio(GPIO_PORTE_BASE, (1 << 5), (1 << 4));  // I2C2
+    init_i2c_gpio(GPIO_PORTD_BASE, (1 << 1), (1 << 0));  // I2C3
 
-    ROM_I2CMasterIntDisableEx(I2C0_BASE, I2C_MASTER_INT_DATA);
-    ROM_I2CMasterIntDisableEx(I2C1_BASE, I2C_MASTER_INT_DATA);
-    ROM_I2CMasterIntDisableEx(I2C2_BASE, I2C_MASTER_INT_DATA);
-    ROM_I2CMasterIntDisableEx(I2C3_BASE, I2C_MASTER_INT_DATA);
+    GPIOPinTypeI2CSCL(GPIO_PORTB_BASE, GPIO_PIN_2); //I2C0
+    GPIOPinTypeI2C(   GPIO_PORTB_BASE, GPIO_PIN_3);
+
 
     // Initialize the I2C master module for 400 kHz
     ROM_I2CMasterInitExpClk(I2C0_BASE, SYSTEM_CLOCK, true);
@@ -468,7 +488,7 @@ void init_i2c_system(bool isr_init) {
     ROM_I2CMasterInitExpClk(I2C3_BASE, SYSTEM_CLOCK, true);
 
     if (isr_init){
-        i2c_cycle = 0;
+        g_i2c_cycle = 0;
         // Initialize I2C0 peripheral driver.
         i2c_state_init(&g_sI2CInst[0], I2C0_BASE, INT_I2C0);
         i2c_state_init(&g_sI2CInst[1], I2C1_BASE, INT_I2C1);
@@ -483,12 +503,9 @@ void init_i2c_system(bool isr_init) {
                 &g_SwitchStateSampled.switchState.i2cReadData[c][p];
             }
         }
-        // Only enable some PCF
-        // g_sI2CInst[0].pcf_state[0].flags = FPCF_RENABLED;
-        // g_sI2CInst[0].pcf_state[1].flags = FPCF_RENABLED;
     } else {
         // interrupts are not initialized yet, use blocking I2C
-        for (unsigned p=0; p<PCF_MAX_PER_CHANNEL; p++){
+        for (unsigned p=0; p<PCF_MAX_PER_CHANNEL; p++) {
             stupid_i2c_send(I2C0_BASE, 0x20+p, 0x00);
             stupid_i2c_send(I2C1_BASE, 0x20+p, 0x00);
             stupid_i2c_send(I2C2_BASE, 0x20+p, 0x00);
@@ -497,38 +514,36 @@ void init_i2c_system(bool isr_init) {
     }
 }
 
-// Shall be called every 1 ms
+// Start one I2C read / write cycle, which will run completely within the ISR
 void trigger_i2c_cycle()
 {
     static unsigned bcm_ticks=0;
-    i2c_cycle++;
+    g_i2c_cycle++;
     bcm_ticks++;
     // Cycle through the bcm_buffer in a binary way
     if (bcm_ticks >= (1 << g_bcmIndex)) {
         bcm_ticks = 0;
-        g_bcmIndex++;
-        if(g_bcmIndex >= N_BIT_PWM){
+        if(g_bcmIndex >= N_BIT_PWM - 1) {
             g_bcmIndex = 0;
+        } else {
+            g_bcmIndex++;
         }
     }
-    // UARTprintf("%x ", g_bcmIndex);
     // Trigger a new i2c sequence (takes < 0.5 us until completion)
     t_i2cChannelState *s = g_sI2CInst;
     for (unsigned i=0; i<=3; i++){
         s->i2c_state = I2C_START;
         // After 10 s of running, disable PCFs when there's too many errors
-        if (i2c_cycle == PCF_ERR_CHECK_CYCLE) {
+        if (g_i2c_cycle == PCF_ERR_CHECK_CYCLE) {
             t_pcf_state *pcf = s->pcf_state;
-            for (unsigned p=0; p<PCF_MAX_PER_CHANNEL; p++){
-                if (pcf->err_cnt > PCF_ERR_CNT_DISABLE) pcf->flags = 0;
+            for (unsigned p=0; p<PCF_MAX_PER_CHANNEL; p++) {
+                if (pcf->err_cnt > PCF_ERR_CNT_DISABLE)
+                    pcf->flags = 0;
                 pcf++;
             }
         }
-        // ledOut(2);
-        // ledOut(0);
         IntTrigger(s->int_addr);
         s++;
-        // break;
     }
 }
 

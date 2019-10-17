@@ -253,8 +253,13 @@ static void process_IO()
 
 void task_pcf_io(void *pvParameters)
 {
-//    Read the state of all switches every 1 ms
-//    Then we need to debounce each switch and send `state changed` events
+    // Coordinate the following action with a cycle time of 1 ms
+    //   * read switch states (I2C and Matrix)
+    //   * write switch states to achieve Binary Code Modu. on output ports
+    //   * get state of switches from debounce logic
+    //   * figure out which switches changes state and send events over USB
+    //   * carry out one custom I2C transaction from the queue
+    //     and report its result on USB
     TickType_t xLastWakeTime;
     unsigned i;
     // hPcfInReader = xTaskGetCurrentTaskHandle();
