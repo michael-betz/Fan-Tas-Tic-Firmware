@@ -117,7 +117,7 @@ Plug in the debug connector and:
 ```bash
 $ make
 $ make flash
-$ miniterm.py /dev/ttyACM0 115200
+$ miniterm.py /dev/ttyACM0 1152000
 ```
 
 # Serial command API

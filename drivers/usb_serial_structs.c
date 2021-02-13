@@ -95,7 +95,7 @@ tUSBDCDCDevice g_sCDCDevice =
     NUM_STRING_DESCRIPTORS
 };
 
-uint8_t g_pui8USBRxBuffer[UART_BUFFER_SIZE];
+uint8_t g_pui8USBRxBuffer[USB_BUFFER_SIZE];
 tUSBBuffer g_sRxBuffer =
 {
     false,                          // This is a receive buffer.
@@ -105,10 +105,10 @@ tUSBBuffer g_sRxBuffer =
     USBDCDCRxPacketAvailable,       // pfnAvailable
     (void *)&g_sCDCDevice,          // pvHandle
     g_pui8USBRxBuffer,              // pui8Buffer
-    UART_BUFFER_SIZE,               // ui32BufferSize
+    USB_BUFFER_SIZE,                // ui32BufferSize
 };
 
-uint8_t g_pui8USBTxBuffer[UART_BUFFER_SIZE];
+uint8_t g_pui8USBTxBuffer[USB_BUFFER_SIZE];
 tUSBBuffer g_sTxBuffer =
 {
     true,                           // This is a transmit buffer.
@@ -118,5 +118,5 @@ tUSBBuffer g_sTxBuffer =
     USBDCDCTxPacketAvailable,       // pfnAvailable
     (void *)&g_sCDCDevice,          // pvHandle
     g_pui8USBTxBuffer,              // pui8Buffer
-    UART_BUFFER_SIZE,               // ui32BufferSize
+    USB_BUFFER_SIZE,                // ui32BufferSize
 };

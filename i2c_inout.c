@@ -62,6 +62,7 @@ static void i2cUnstucker(uint32_t base, uint8_t pin_SCL, uint8_t pin_SDA) {
     unsigned rVal = GPIOPinRead(base, pin_SDA | pin_SCL);
     rVal = ~rVal & (pin_SDA | pin_SCL);
     if(rVal){
+        REPORT_ERROR("ER:0025\n");
         UARTprintf("i2cUnstucker()        : pin stuck low @%x: ", base);
         if(rVal & pin_SCL)
             UARTprintf("SCL ");
@@ -143,6 +144,7 @@ static void stupid_i2c_send(uint32_t b, uint8_t addr, uint8_t data)
     unsigned i=0;
     while (HWREG(b + I2C_O_MCS) & I2C_MCS_BUSY) {
         if (i++ > 0x0000FFFF) {
+            REPORT_ERROR("ER:0024\n");
             UARTprintf("stupid_i2c_send(): timeout on ch %x! SDA pullups installed?\n", _get_ch(b));
             return;
         }
@@ -228,6 +230,7 @@ void handle_i2c_custom()
     t_i2cChannelState *c = &g_sI2CInst[i2c.channel];
     if (c->i2c_state != I2C_IDLE) {
         UARTprintf("handle_i2c_custom(): Error! I2C not in IDLE state\n");
+        REPORT_ERROR("ER:0021\n");
         goto handle_i2c_custom_finally;
     }
     c->i2c_state = I2C_CUSTOM;
@@ -242,15 +245,25 @@ void handle_i2c_custom()
     int temp = usprintf(hexStr, "I2: %x, %02x", i2c.channel, i2c.flags);
     chr = &hexStr[temp];
     if (i2c.nRead) {
+        hexStr = pvPortMalloc(2 * i2c.nRead + 24);
+        if (!hexStr) {
+            UARTprintf("handle_i2c_custom(): Could not allocate hexStr buffer!\n");
+            REPORT_ERROR("ER:0022\n");
+            goto handle_i2c_custom_finally;
+        }
+        int temp = usprintf(hexStr, "I2: %x, %02x", i2c.channel, i2c.flags);
+        chr = &hexStr[temp];
+
         *chr++ = ',';
         *chr++ = ' ';
         chr = buffToHex(i2c.readBuff, i2c.nRead, chr);
         temp += 2 + 2 * i2c.nRead;
+
+        *chr++ = '\n';
+        *chr++ = '\0';
+        temp += 1;
+        ts_usbSend((uint8_t *)hexStr, temp);
     }
-    *chr++ = '\n';
-    *chr++ = '\0';
-    temp += 1;
-    ts_usbSend((uint8_t *)hexStr, temp);
 
 handle_i2c_custom_finally:
     vPortFree(i2c.readBuff);  i2c.readBuff  = NULL;
@@ -267,6 +280,7 @@ static bool setup_pcf_rw(unsigned b, t_pcf_state *pcf)
         // don't start a new transaction
         if(HWREG(b + I2C_O_MCS) & (I2C_MCS_BUSBSY | I2C_MCS_BUSY)) {
             UARTprintf("setup_pcf_rw(): busy error\n");
+            REPORT_ERROR("ER:0023\n");
             return false;
         }
     }

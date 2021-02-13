@@ -92,7 +92,7 @@ uint16_t strMyStrip(uint8_t *cmdString, uint16_t cmdLen) {
 void taskDemoLED(void *pvParameters) {
     // Flash the LEDs on the launchpad
     // Set up the UART which is connected to the virtual debugging COM port
-    UARTStdioConfig(0, 115200, SYSTEM_CLOCK);
+    UARTStdioConfig(0, 1152000, SYSTEM_CLOCK);
     UARTprintf("\n\n\n\n"
             "**************************************************\n"
             " Hi, here's the brain of Fan-Tas-Tic Pinball \n"
@@ -261,15 +261,19 @@ void ts_usbSend(uint8_t *data, uint16_t len) {
 //    Do a thread safe USB TX transfer in background (add data to USB send buffer)
     uint32_t freeSpace;
     taskENTER_CRITICAL();
-    UARTwrite( (const char*) data, len );   //Echo to debug connection
+    UARTwrite((const char*) data, len);   //Echo to debug connection
     freeSpace = USBBufferSpaceAvailable(&g_sTxBuffer);
 //        UARTprintf( "ts_usbSend(): TX buffer %d bytes free.\n", freeSpace );
     if (freeSpace >= len) {
         USBBufferWrite(&g_sTxBuffer, data, len);
     } else {
-//        UARTprintf("%22s: Not enough space in USB TX buffer! Need %d have %d. <FLUSH>\n",
-//                "ts_usbSend()", len, freeSpace);
-        USBBufferFlush( &g_sTxBuffer );
+       UARTprintf(
+            "%22s: Not enough space in USB TX buffer! Need %d have %d. <FLUSH>\n",
+            "ts_usbSend()",
+            len,
+            freeSpace
+        );
+        USBBufferFlush(&g_sTxBuffer);
     }
     taskEXIT_CRITICAL();
 }
@@ -297,9 +301,9 @@ int Cmd_help(int argc, char *argv[]) {
 
 int Cmd_IDN(int argc, char *argv[]) {
     const uint8_t buff[] = VERSION_IDN;
-    ts_usbSend( (uint8_t*)buff, VERSION_IDN_LEN );
-    UARTprintf( VERSION_INFO );
-    UARTprintf( "xPortGetFreeHeapSize(): %d\n", xPortGetFreeHeapSize() );
+    ts_usbSend((uint8_t*)buff, VERSION_IDN_LEN);
+    UARTprintf(VERSION_INFO);
+    UARTprintf("xPortGetFreeHeapSize(): %d\n", xPortGetFreeHeapSize());
     return 0;
 }
 
@@ -317,7 +321,7 @@ int Cmd_IR(int argc, char *argv[]){
     UARTprintf("Reseting I2C system ... ");
     g_reDiscover = 1;
     // task might be blocked (no pullups?) ...
-    xTaskNotify(hPcfInReader, 0x0F, eSetBits);
+    xTaskNotify(hPcfInReader, 0, eNoAction);
     return 0;
 }
 
@@ -328,15 +332,20 @@ int Cmd_SW(int argc, char *argv[]) {
     uint8_t i;
     ustrncpy(outBuffer, "SW:", REPORT_SWITCH_BUF_SIZE); //SW = Hex coded switch state
     for (i = 0; i < N_LONGS; i++) {
-        charsWritten += usnprintf(&outBuffer[charsWritten], REPORT_SWITCH_BUF_SIZE - charsWritten, "%08x", g_SwitchStateDebounced.longValues[i]);
+        charsWritten += usnprintf(
+            &outBuffer[charsWritten],
+            REPORT_SWITCH_BUF_SIZE - charsWritten,
+            "%08x",
+            g_SwitchStateDebounced.longValues[i]
+        );
         if (charsWritten >= REPORT_SWITCH_BUF_SIZE - 1) {
-            REPORT_ERROR( "ER:000C\n" );
+            REPORT_ERROR("ER:000C\n");
             UARTprintf("Cmd_SW(): string buffer overflow!\n");
             return 0;
         }
     }
-    outBuffer[ charsWritten ] = '\n';
-    ts_usbSend((uint8_t*) outBuffer, charsWritten+1 );
+    outBuffer[charsWritten] = '\n';
+    ts_usbSend((uint8_t*) outBuffer, charsWritten + 1);
     return 0;
 }
 
@@ -366,17 +375,17 @@ int Cmd_DEB(int argc, char *argv[]) {
     return CMDLINE_TOO_FEW_ARGS;
 }
 
-int Cmd_SOE(int argc, char *argv[]){
+int Cmd_SOE(int argc, char *argv[]) {
     uint8_t onOff;
     if (argc == 2) {
         onOff = ustrtoul(argv[1], NULL, 0);
-        if( onOff ){
+        if (onOff) {
             ENABLE_SOLENOIDS();
-            UARTprintf( "Cmd_OUT(): 24 V solenoid power enabled.\n" );
+            UARTprintf("Cmd_SOE(): 24 V enabled.\n");
             return 0;
-        }else{
+        } else {
             DISABLE_SOLENOIDS();
-            UARTprintf( "Cmd_OUT(): 24 V solenoid power disabled.\n" );
+            UARTprintf("Cmd_SOE(): 24 V disabled.\n");
             return 0;
         }
     }
@@ -742,12 +751,12 @@ int Cmd_HI(int argc, char *argv[]) {
     if(argc != 2) return CMDLINE_TOO_FEW_ARGS;
     t_hw_index i = decodeHwIndex(ustrtoul(argv[1], NULL, 0), 1);
     if (i.channel > 3) {
-        // REPORT_ERROR("ER:001E\n");
+        REPORT_ERROR("ER:001E\n");
         UARTprintf("%22s: Not a I2C channel: %x\n", "Cmd_HI()", i.channel);
         return 0;
     }
     if (i.i2c_addr > 0x27) {
-        // REPORT_ERROR("ER:001E\n");
+        REPORT_ERROR("ER:001E\n");
         UARTprintf("%22s: Invalid i2c_addr: %x\n", "Cmd_HI()", i.i2c_addr);
         return 0;
     }
@@ -762,7 +771,7 @@ int Cmd_HI(int argc, char *argv[]) {
         return 0;
     }
     *i2c.writeBuff = 0xFF;
-    UARTprintf("%22s: CH: %x, ADDR: %x gets high\n", "Cmd_HI()", i2c.channel, i2c.i2c_addr);
+    // UARTprintf("%22s: CH: %x, ADDR: %x gets high\n", "Cmd_HI()", i2c.channel, i2c.i2c_addr);
     if(!xQueueSendToBack(g_i2c_queue, &i2c, 100 / portTICK_PERIOD_MS)) {
         UARTprintf("%22s: I2C queue full!\n", "Cmd_HI()");
         vPortFree(i2c.writeBuff); i2c.writeBuff = NULL;

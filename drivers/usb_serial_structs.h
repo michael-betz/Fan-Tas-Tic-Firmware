@@ -1,6 +1,6 @@
 #ifndef _USB_SERIAL_STRUCTS_H_
 #define _USB_SERIAL_STRUCTS_H_
-#define UART_BUFFER_SIZE 256
+#define USB_BUFFER_SIZE 512
 
 extern uint32_t RxHandler(void *pvCBData, uint32_t ui32Event,
                           uint32_t ui32MsgValue, void *pvMsgData);

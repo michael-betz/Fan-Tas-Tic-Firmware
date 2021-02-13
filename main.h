@@ -2,18 +2,18 @@
 #define FAN_TAS_TIC_CONTROLLER_MAIN_H_
 #include <stdint.h>
 
-#define VERSION_IDN  "ID:MB:V0.2\n"
+#define VERSION_IDN  "ID:MB:V0.3\n"
 #define VERSION_IDN_LEN 11
 #ifndef GIT_VERSION
     #define GIT_VERSION "None"
 #endif
-#define VERSION_INFO "\nFan-Tas-Tic pinball controller\nM. Betz, 11/2018\nGit: " GIT_VERSION "\n"
+#define VERSION_INFO "\nFan-Tas-Tic pinball controller\nM. Betz, 10/2019\nGit: " GIT_VERSION "\n"
 
 // System clock rate, 80 MHz
 #define SYSTEM_CLOCK    80000000U
 
 // Set PWM frequency to 20 kHz, which gives a maximum PWM value for 100 % of 4000
-#define MAX_PWM (SYSTEM_CLOCK/20000)
+#define MAX_PWM (SYSTEM_CLOCK / 20000)
 
 // Solenoid 24 V power interlock relay
 #define DISABLE_SOLENOIDS() ROM_GPIOPinWrite(GPIO_PORTE_BASE, GPIO_PIN_0, 0)
