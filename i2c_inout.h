@@ -12,10 +12,15 @@
 #define PCF_MAX_PER_CHANNEL 8
 // Lowest possible I2C Address of a PCF8574 IO extender (all address pins low)
 #define PCF_LOWEST_ADDR 0x20
-// After how much time to check for errors and disable PCFs [ms]
-#define PCF_ERR_CHECK_CYCLE 10000
-// PCF gets disabled after that many errors
-#define PCF_ERR_CNT_DISABLE  9990
+// Time window to count I2C errors in [ms]
+#define PCF_ERR_CHECK_CYCLE 5000
+// Max. number of errors in the time window
+#define PCF_ERR_CNT_DISABLE  4995
+// Read channels get disabled if more than `PCF_ERR_CNT_DISABLE` errors happen
+// in the first `PCF_ERR_CHECK_CYCLE` miliseconds.
+// For all write channels, if more then `PCF_ERR_CNT_DISABLE` errors happen in
+// any `PCF_ERR_CHECK_CYCLE` milisecond long window. 24 V will be disabled and
+// the system will shut down.
 
 //--------------
 // Custom types

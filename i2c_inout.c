@@ -14,6 +14,7 @@
 #include "inc/hw_ints.h"
 #include "inc/hw_i2c.h"
 #include "inc/hw_gpio.h"
+#include "inc/hw_nvic.h"
 #include "driverlib/i2c.h"
 #include "driverlib/pin_map.h"
 #include "driverlib/gpio.h"
@@ -513,17 +514,40 @@ void trigger_i2c_cycle()
     }
     // Trigger a new i2c sequence (takes < 0.5 us until completion)
     t_i2cChannelState *s = g_sI2CInst;
-    for (unsigned i=0; i<=3; i++){
+    for (unsigned i=0; i<=3; i++) {
         s->i2c_state = I2C_START;
-        // After 10 s of running, disable PCFs when there's too many errors
-        if (g_i2c_cycle == PCF_ERR_CHECK_CYCLE) {
+
+        // Have a look at the error counts every 5 seconds
+        if ((g_i2c_cycle % PCF_ERR_CHECK_CYCLE) == 0) {
             t_pcf_state *pcf = s->pcf_state;
             for (unsigned p=0; p<PCF_MAX_PER_CHANNEL; p++) {
-                if (pcf->err_cnt > PCF_ERR_CNT_DISABLE)
-                    pcf->flags = 0;
+                // If too many writes failed in the 5 s window, shutdown 24 V!
+                if (pcf->flags & FPCF_WENABLED) {
+                    if (pcf->err_cnt > PCF_ERR_CNT_DISABLE) {
+                        // Panic shutdown!!!!
+                        DISABLE_SOLENOIDS();
+                        ROM_GPIOPinWrite(GPIO_PORTF_BASE, 0x0E, 1 << 1);  // red LED
+                        REPORT_ERROR("ER:0100\n");
+                        UARTprintf("trigger_i2c_cycle(): too many write errors!\ni2c_addr = %02x. Fatal! Rebooting!", pcf->i2c_addr);
+                        vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+                        // Software reset
+                        HWREG(NVIC_APINT) = NVIC_APINT_VECTKEY | NVIC_APINT_SYSRESETREQ;
+                        return;  // We should never get here
+                    } else {
+                        pcf->err_cnt = 0;
+                    }
+                // If too many reads failed within the first 5 s, give up on
+                // reading these PCFs. There's probably nothing connected there.
+                } else if ((pcf->flags & FPCF_RENABLED) && (g_i2c_cycle == PCF_ERR_CHECK_CYCLE)) {
+                    if (pcf->err_cnt > PCF_ERR_CNT_DISABLE)
+                        pcf->flags = 0;
+                }
+
                 pcf++;
             }
         }
+
         IntTrigger(s->int_addr);
         s++;
     }
