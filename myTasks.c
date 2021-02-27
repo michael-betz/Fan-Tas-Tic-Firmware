@@ -91,8 +91,6 @@ uint16_t strMyStrip(uint8_t *cmdString, uint16_t cmdLen) {
 
 void taskDemoLED(void *pvParameters) {
     // Flash the LEDs on the launchpad
-    // Set up the UART which is connected to the virtual debugging COM port
-    UARTStdioConfig(0, 1152000, SYSTEM_CLOCK);
     UARTprintf("\n\n\n\n"
             "**************************************************\n"
             " Hi, here's the brain of Fan-Tas-Tic Pinball \n"

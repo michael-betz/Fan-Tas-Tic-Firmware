@@ -540,8 +540,10 @@ void trigger_i2c_cycle()
                 // If too many reads failed within the first 5 s, give up on
                 // reading these PCFs. There's probably nothing connected there.
                 } else if ((pcf->flags & FPCF_RENABLED) && (g_i2c_cycle == PCF_ERR_CHECK_CYCLE)) {
-                    if (pcf->err_cnt > PCF_ERR_CNT_DISABLE)
+                    if (pcf->err_cnt > PCF_ERR_CNT_DISABLE) {
                         pcf->flags = 0;
+                        pcf->err_cnt = 0;
+                    }
                 }
 
                 pcf++;

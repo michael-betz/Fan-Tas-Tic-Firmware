@@ -2,6 +2,9 @@
 #define FAN_TAS_TIC_CONTROLLER_MAIN_H_
 #include <stdint.h>
 #include <stdbool.h>
+#include "inc/hw_memmap.h"
+#include "driverlib/rom.h"
+#include "driverlib/gpio.h"
 
 #define VERSION_IDN  "ID:MB:V0.3\n"
 #define VERSION_IDN_LEN 11
@@ -24,6 +27,7 @@
 #define MAX(X,Y) ((X) > (Y) ? (X) : (Y))
 
 extern volatile bool g_bFeedWatchdog;
+extern volatile bool g_bWatchdogIsTripped;
 
 //---------------------
 // Functions

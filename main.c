@@ -27,6 +27,7 @@
 
 TaskHandle_t hUSBCommandParser = NULL;
 volatile bool g_bFeedWatchdog = true;
+volatile bool g_bWatchdogIsTripped = false;
 
 //-------------------------------------------------------------------------
 // Helper functions to Setup a hardware counter for simple cycle counting
@@ -193,16 +194,16 @@ void WatchdogIntHandler(void)
     // If we have been told to stop feeding the watchdog, return immediately
     // without clearing the interrupt.  This will cause the system to reset
     // next time the watchdog interrupt fires.
-    if(g_bFeedWatchdog) {
+    if(g_bFeedWatchdog && !g_bWatchdogIsTripped) {
         // Clear the watchdog interrupt.
         ROM_WatchdogIntClear(WATCHDOG0_BASE);
         g_bFeedWatchdog = false;
     } else {
         // Panic shutdown in 1s !!!!
         DISABLE_SOLENOIDS();
+        g_bWatchdogIsTripped = true;
         ROM_GPIOPinWrite(GPIO_PORTF_BASE, 0x0E, 1 << 1);  // red LED
-        REPORT_ERROR("ER:0101\n");
-        UARTprintf("Watchdog timer expired. Fatal! Rebooting!\n");
+        ROM_IntDisable(INT_WATCHDOG);
     }
 }
 
@@ -241,14 +242,8 @@ int main(void) {
     );
     initWdt();
     initGpio();
-    // Write 0 to all PCFs (in case there is relays)
-    init_i2c_system(false);
-    // Init debug HW timer for measuring processor cycles (%timeit)
-    configureTimer();
-    // Init 3 SPI channels for setting ws2811 LEDs
-    spiSetup();
-    // Init the 4 high speed PWM output channels
-    initPWM();
+    // Set up the UART which is connected to the virtual debugging COM port
+    UARTStdioConfig(0, 1152000, SYSTEM_CLOCK);
     // Enable lazy stacking for interrupt handlers.  This allows floating-point
     // instructions to be used within interrupt handlers, but at the expense of
     // extra stack usage.
@@ -269,6 +264,18 @@ int main(void) {
     USBDCDCInit(0, &g_sCDCDevice);
 
     //-------------------------------------------------------------------------
+    // Init I2C
+    //-------------------------------------------------------------------------
+    // Write 0 to all PCFs (in case there is relays)
+    init_i2c_system(false);
+    // Init debug HW timer for measuring processor cycles (%timeit)
+    configureTimer();
+    // Init 3 SPI channels for setting ws2811 LEDs
+    spiSetup();
+    // Init the 4 high speed PWM output channels
+    initPWM();
+
+    //-------------------------------------------------------------------------
     // The WS2811 LEDs will glitch if the SPI buffer has an underflow, hence
     // the SPI interrupt gets a higher priority
     // Highest Int priority = (0<<5)    (only upper 3 bits count)
@@ -283,6 +290,7 @@ int main(void) {
     ROM_IntPrioritySet(INT_SSI1, (5<<5));     //SPI  = High priority
     ROM_IntPrioritySet(INT_SSI2, (5<<5));
     ROM_IntPrioritySet(INT_SSI3, (5<<5));
+    ROM_IntPrioritySet(INT_WATCHDOG, (7<<5));
 
     //-------------------------------------------------------------------------
     // Startup the FreeRTOS scheduler
@@ -303,6 +311,7 @@ int main(void) {
 //ASSERT() Error function failed ASSERTS() from driverlib/debug.h are executed in this function
 void __error__(char *pcFilename, uint32_t ui32Line) {
     DISABLE_SOLENOIDS();
+    ROM_GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2|GPIO_PIN_1, 2);
     while (1)
         ; // Place a breakpoint here to capture errors until logging routine is finished
 }

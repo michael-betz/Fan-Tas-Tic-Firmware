@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "inc/hw_types.h"
+#include "inc/hw_ints.h"
 #include "utils/ustdlib.h"
 #include "my_uartstdio.h"
 // My stuff
@@ -274,6 +275,17 @@ void task_pcf_io(void *pvParameters)
     xLastWakeTime = xTaskGetTickCount();
     i = 0;
     while (1) {
+        if (g_bWatchdogIsTripped) {
+            DISABLE_SOLENOIDS();
+            REPORT_ERROR("ER:0101\n");
+            UARTprintf("Watchdog timer expired. Fatal! Rebooting ...\n");
+            while (1) {
+                DISABLE_SOLENOIDS();
+                ROM_GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_3|GPIO_PIN_2|GPIO_PIN_1, 2);  // red
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+            }
+        }
+
         // Wait for all 4 x I2C channel ISRs to complete
         xTaskNotifyWait(0, 0, NULL, portMAX_DELAY);
         // ledOut(2);
