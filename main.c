@@ -20,11 +20,13 @@
 #include "usblib/device/usbdcdc.h"
 #include "drivers/usb_serial_structs.h"
 //My stuff
+#include "my_uartstdio.h"
 #include "myTasks.h"
 #include "io_manager.h"
 #include "mySpi.h"
 
 TaskHandle_t hUSBCommandParser = NULL;
+volatile bool g_bFeedWatchdog = true;
 
 //-------------------------------------------------------------------------
 // Helper functions to Setup a hardware counter for simple cycle counting
@@ -186,6 +188,46 @@ void setPwm( uint8_t channel, uint16_t pwmValue ){
     HWREG( PWM0_BASE + ui32Gen ) = pwmValue;
 }
 
+void WatchdogIntHandler(void)
+{
+    // If we have been told to stop feeding the watchdog, return immediately
+    // without clearing the interrupt.  This will cause the system to reset
+    // next time the watchdog interrupt fires.
+    if(g_bFeedWatchdog) {
+        // Clear the watchdog interrupt.
+        ROM_WatchdogIntClear(WATCHDOG0_BASE);
+        g_bFeedWatchdog = false;
+    } else {
+        // Panic shutdown in 1s !!!!
+        DISABLE_SOLENOIDS();
+        ROM_GPIOPinWrite(GPIO_PORTF_BASE, 0x0E, 1 << 1);  // red LED
+        REPORT_ERROR("ER:0101\n");
+        UARTprintf("Watchdog timer expired. Fatal! Rebooting!\n");
+    }
+}
+
+void initWdt(void)
+{
+    g_bFeedWatchdog = true;
+
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_WDOG0);
+
+    if(ROM_WatchdogLockState(WATCHDOG0_BASE) == true)
+        ROM_WatchdogUnlock(WATCHDOG0_BASE);
+
+    // Set the period of the watchdog timer to 1 s.
+    ROM_WatchdogReloadSet(WATCHDOG0_BASE, ROM_SysCtlClockGet());
+
+    // Enable interrupt generation from the watchdog timer.
+    ROM_IntEnable(INT_WATCHDOG);
+
+    // Enable reset generation from the watchdog timer.
+    ROM_WatchdogResetEnable(WATCHDOG0_BASE);
+
+    // Enable the watchdog timer.
+    ROM_WatchdogEnable(WATCHDOG0_BASE);
+}
+
 //-------------------------------------------------------------------------
 // Main function
 //-------------------------------------------------------------------------
@@ -197,6 +239,7 @@ int main(void) {
         SYSCTL_XTAL_16MHZ |
         SYSCTL_OSC_MAIN
     );
+    initWdt();
     initGpio();
     // Write 0 to all PCFs (in case there is relays)
     init_i2c_system(false);

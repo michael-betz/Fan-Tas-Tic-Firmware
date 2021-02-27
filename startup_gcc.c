@@ -44,6 +44,7 @@ extern void xPortPendSVHandler(void);
 extern void vPortSVCHandler(void);
 extern void xPortSysTickHandler(void);
 extern void USB0DeviceIntHandler(void);
+extern void WatchdogIntHandler(void);
 extern void UARTStdioIntHandler(void);
 extern void spiISR( uint8_t channel );
 void spiISR0(){ spiISR(0); }
@@ -120,7 +121,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // ADC Sequence 1
     IntDefaultHandler,                      // ADC Sequence 2
     IntDefaultHandler,                      // ADC Sequence 3
-    IntDefaultHandler,                      // Watchdog timer
+    WatchdogIntHandler,                     // Watchdog timer
     IntDefaultHandler,                      // Timer 0 subtimer A
     IntDefaultHandler,                      // Timer 0 subtimer B
     IntDefaultHandler,                      // Timer 1 subtimer A

@@ -289,6 +289,7 @@ void task_pcf_io(void *pvParameters)
         // startTimer();
         readSwitchMatrix();  // 317 us
         // unsigned cycles = stopTimer(); UARTprintf("%d cycles, %d us\n", cycles, cycles * 1000ll * 1000 / SYSTEM_CLOCK);
+        g_bFeedWatchdog = true;
         i++;
     }
 }

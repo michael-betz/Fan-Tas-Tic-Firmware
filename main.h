@@ -1,6 +1,7 @@
 #ifndef FAN_TAS_TIC_CONTROLLER_MAIN_H_
 #define FAN_TAS_TIC_CONTROLLER_MAIN_H_
 #include <stdint.h>
+#include <stdbool.h>
 
 #define VERSION_IDN  "ID:MB:V0.3\n"
 #define VERSION_IDN_LEN 11
@@ -21,6 +22,8 @@
 
 #define MIN(X,Y) ((X) < (Y) ? (X) : (Y))
 #define MAX(X,Y) ((X) > (Y) ? (X) : (Y))
+
+extern volatile bool g_bFeedWatchdog;
 
 //---------------------
 // Functions
